@@ -4,9 +4,10 @@ import sys
 import argparse
 import string
 
-import torch
-import torch.nn
 import numpy as np
+
+from MLP import *
+
 
 def main(args):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -41,11 +42,11 @@ def main(args):
     with open(args.vl) as ifh:
         val_labels = [float(x.rstrip()) for x in ifh]
 
-    with open(args.td) as ifh:
-        train_words = [x.decode(errors='ignore').rstrip().split() for x in ifh]
+    with open(args.td, encoding='utf-8') as ifh:
+        train_words = [x.rstrip().split() for x in ifh]
         train_data = [[vocab[w] if w in vocab else 0 for w in sent] for sent in train_words]
 
-    with open(args.vd) as ifh:
+    with open(args.vd, encoding='utf-8') as ifh:
         val_words = [x.rstrip().split() for x in ifh]
         val_data = [[vocab[w] if w in vocab else 0 for w in sent] for sent in val_words]
 
@@ -63,7 +64,7 @@ def read_embeddings(file):
     printable = set(string.printable)
 
     print("Reading",file)
-    with open(file) as ifh:
+    with open(file, encoding='utf-8') as ifh:
         first_line = ifh.readline()
 
         e = first_line.rstrip().split()
@@ -158,7 +159,8 @@ def train_all(sentences, embeddings, gold_outputs, num_patterns, pattern_length,
     pi[0] = 1
     eta = Variable(torch.zeros(pattern_length))
     eta[-1] = 1
-    optimizer = torch.optim.Adam([w, mlp], lr=0.0001)
+
+    optimizer = torch.optim.Adam([w, mlp.parameters()], lr=0.0001)
 
     indices = range(sentences.size()[0])
 
