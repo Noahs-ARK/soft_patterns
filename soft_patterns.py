@@ -5,7 +5,7 @@ import argparse
 import string
 
 import numpy as np
-
+from torch.autograd import Variable
 from MLP import *
 
 
@@ -54,6 +54,7 @@ def main(args):
               num_classes)
 
     return 0
+
 
 def read_embeddings(file):
     dim = -1
@@ -119,6 +120,7 @@ def score_one_sentence(sentence, embeddings, w, pi, eta, pattern_length, sigmoid
 
     return s
 
+
 def compute_delta(x, w, pattern_length, sigmoid):
     delta = Variable(torch.zeros(pattern_length, pattern_length))
 
@@ -144,6 +146,7 @@ def train_one_sentence(sentence, embeddings, gold_output, w, pi, eta, pattern_le
 
     loss.backward()
     optimizer.step()
+
 
 # Train model.
 # sentences
@@ -171,6 +174,7 @@ def train_all(sentences, embeddings, gold_outputs, num_patterns, pattern_length,
             sentence = sentences[i]
             gold = gold_outputs[i]
             train_one_sentence(sentence, embeddings, gold, w, pi, eta, pattern_length, sigmoid, mlp, optimizer)
+
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))
