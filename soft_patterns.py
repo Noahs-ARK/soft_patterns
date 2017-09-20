@@ -2,46 +2,24 @@
 
 import sys
 import argparse
+import math
 import string
 
 import numpy as np
+import torch
+from torch import nn
 from torch.autograd import Variable
-from mlp import *
+from mlp import MLP
 
 
 def main(args):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    parser.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    parser.add_argument("-s", "--seed", help="Random seed", default=100)
-    parser.add_argument("-i", "--n_iterations", help="Number of iterations", default=10)
-    parser.add_argument("-p", "--pattern_length", help="Length of pattern", default=6)
-    parser.add_argument("-k", "--num_of_patterns", help="Number of patterns", default=1)
-    parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", default=1)
-    parser.add_argument("--td", help="Train data file", required=True)
-    parser.add_argument("--tl", help="Train labels file", required=True)
-    parser.add_argument("--vd", help="Validation data file", required=True)
-    parser.add_argument("--vl", help="Validation labels file", required=True)
-    parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", default=0.001)
-
-    args = parser.parse_args()
     print(args)
-
     pattern_length = int(args.pattern_length)
-    num_patts = int(args.num_of_patterns)
-    n_iterations = int(args.n_iterations)
+    num_patterns = int(args.num_patterns)
+    num_iterations = int(args.num_iterations)
     mlp_hidden_dim = int(args.mlp_hidden_dim)
 
     vocab, embeddings, word_dim = read_embeddings(args.embedding_file)
-
-    with open(args.tl) as ifh:
-        train_labels = [int(x.rstrip()) for x in ifh]
-
-    num_classes = len(set(train_labels))
-    print("num_classes:", num_classes)
-
-    # with open(args.vl) as ifh:
-    #     val_labels = [int(x.rstrip()) for x in ifh]
 
     with open(args.td, encoding='utf-8') as ifh:
         train_words = [x.rstrip().split() for x in ifh]
@@ -51,14 +29,37 @@ def main(args):
     #     val_words = [x.rstrip().split() for x in ifh]
     #     val_data = [[vocab[w] if w in vocab else 0 for w in sent] for sent in val_words]
 
-    train_all(train_data, embeddings, train_labels, num_patts, pattern_length, word_dim, n_iterations, mlp_hidden_dim, \
-              num_classes)
+    with open(args.tl) as ifh:
+        train_labels = [int(x.rstrip()) for x in ifh]
+
+    n = args.num_train_instances
+    if n is not None:
+        train_data = train_data[:n]
+        train_labels = train_labels[:n]
+
+    print("training instances:", len(train_data))
+
+    num_classes = len(set(train_labels))
+    print("num_classes:", num_classes)
+
+    # with open(args.vl) as ifh:
+    #     val_labels = [int(x.rstrip()) for x in ifh]
+
+    train_all(train_data,
+              embeddings,
+              train_labels,
+              num_patterns,
+              pattern_length,
+              word_dim,
+              num_iterations,
+              mlp_hidden_dim,
+              num_classes,
+              args.learning_rate)
 
     return 0
 
 
 def read_embeddings(file):
-    dim = -1
     vocab = dict()
     vocab["*UNK*"] = 0
 
@@ -143,9 +144,11 @@ def train_one_sentence(sentence, embeddings, gold_output, ws, pi, eta, pattern_l
     criterion = nn.NLLLoss()
     softmax_val = softmax(output)
     loss = criterion(softmax_val.view(1, 2), Variable(torch.LongTensor([gold_output]), requires_grad=False))
+    loss_val = loss.data[0]
 
     loss.backward()
     optimizer.step()
+    return loss_val
 
 
 # Train model.
@@ -158,7 +161,8 @@ def train_all(sentences,
               word_dim,
               n_iterations,
               mlp_hidden_dim,
-              num_classes):
+              num_classes,
+              learning_rate):
     """Train model. sentences -- """
     sigmoid = nn.Sigmoid()
 
@@ -175,20 +179,49 @@ def train_all(sentences,
 
     mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
 
-    optimizer = torch.optim.Adam(list(mlp.parameters()) + ws, lr=0.0001)
+    all_params = list(mlp.parameters()) + ws
 
-    indices = list(range(len(sentences)))
+    print("# params:", sum(p.nelement() for p in all_params))
+
+    optimizer = torch.optim.Adam(all_params, lr=learning_rate)
 
     for it in range(n_iterations):
-        print("iteration:", it)
+        print("iteration:", it,
+              "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
+              end=" ", flush=True)
+        np.random.shuffle(sentences)
 
-        np.random.shuffle(indices)
-
-        for i in indices:
-            sentence = sentences[i]
-            gold = gold_outputs[i]
-            train_one_sentence(sentence, embeddings, gold, ws, pi, eta, pattern_length, sigmoid, mlp, optimizer)
+        loss = 0.0
+        for sentence, gold in zip(sentences, gold_outputs):
+            # print(".", end='')
+            loss += train_one_sentence(sentence,
+                                       embeddings,
+                                       gold,
+                                       ws,
+                                       pi,
+                                       eta,
+                                       pattern_length,
+                                       sigmoid,
+                                       mlp,
+                                       optimizer)
+        print("loss:", loss / len(sentences))
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv))
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
+    parser.add_argument("-s", "--seed", help="Random seed", default=100)
+    parser.add_argument("-i", "--num_iterations", help="Number of iterations", default=10)
+    parser.add_argument("-p", "--pattern_length", help="Length of pattern", default=6)
+    parser.add_argument("-k", "--num_patterns", help="Number of patterns", default=1)
+    parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", default=1)
+    # TODO: default=None
+    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", default=100)
+    parser.add_argument("--td", help="Train data file", required=True)
+    parser.add_argument("--tl", help="Train labels file", required=True)
+    parser.add_argument("--vd", help="Validation data file", required=True)
+    parser.add_argument("--vl", help="Validation labels file", required=True)
+    parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", default=0.01)
+
+    sys.exit(main(parser.parse_args()))
