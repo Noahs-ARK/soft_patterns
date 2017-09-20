@@ -6,7 +6,7 @@ import string
 
 import numpy as np
 from torch.autograd import Variable
-from MLP import *
+from mlp import *
 
 
 def main(args):
@@ -38,6 +38,7 @@ def main(args):
         train_labels = [int(x.rstrip()) for x in ifh]
 
     num_classes = len(set(train_labels))
+    print("num_classes:", num_classes)
 
     # with open(args.vl) as ifh:
     #     val_labels = [int(x.rstrip()) for x in ifh]
@@ -101,49 +102,47 @@ def read_embeddings(file):
             vecs.append(np.fromstring(e[1], dtype=float, sep=' '))
 
     print("Done reading", len(vecs), "vectors of dimension", dim)
-    return vocab, torch.Tensor(vecs), dim
+    return vocab, Variable(torch.Tensor(vecs), requires_grad=False), dim
 
 
-def score_one_sentence(sentence, embeddings, w, pi, eta, pattern_length, sigmoid):
+def score_one_sentence(sentence, embeddings, ws, pi, eta, pattern_length, sigmoid):
     """calculate score for one sentence.
     sentence -- a sequence of indices that correspond to the word embedding matrix"""
     hidden = pi.clone()
 
-    s = Variable(torch.zeros(1))  # is there a better way to make just a scalar var?
-    for wp in w:
+    scores = Variable(torch.zeros(len(ws)))
+    for pattern_idx, w in enumerate(ws):
         for index in sentence:
             x = embeddings[index]
-            delta = compute_delta(x, wp, pattern_length, sigmoid)
+            delta = compute_delta(x, w, pattern_length, sigmoid)
             hidden = torch.mm(hidden, delta) + pi
-            s = s + torch.mm(hidden, eta)
+            scores[pattern_idx] = scores[pattern_idx] + torch.mm(hidden, eta)
 
-    return s
+    return scores
 
 
 def compute_delta(x, w, pattern_length, sigmoid):
     delta = Variable(torch.zeros(pattern_length, pattern_length))
 
-    # for i in range(pattern_length):
-    #     for j in range(i, min(i+2, pattern_length-1)):
-    #         # TODO: we're not allowed to do this, because torch can't backprop through
-    #         # only part of a tensor? Need to find a way to vectorize this I think.
-    #         delta[i, j] = torch.dot(w[i, j], x) - torch.log(torch.norm(w[i, j]))
+    for i in range(pattern_length):
+        for j in range(i, min(i + 2, pattern_length - 1)):
+            delta[i, j] = torch.dot(w[i, j], x) - torch.log(torch.norm(w[i, j]))
 
     return sigmoid(delta)
 
 
-def train_one_sentence(sentence, embeddings, gold_output, w, pi, eta, pattern_length, sigmoid, mlp, optimizer):
+def train_one_sentence(sentence, embeddings, gold_output, ws, pi, eta, pattern_length, sigmoid, mlp, optimizer):
     """Train one sentence.
     sentence: """
     optimizer.zero_grad()
-    score = score_one_sentence(sentence, embeddings, w, pi, eta, pattern_length, sigmoid)
+    scores = score_one_sentence(sentence, embeddings, ws, pi, eta, pattern_length, sigmoid)
 
-    output = mlp.forward(score)
+    output = mlp.forward(scores)
 
     softmax = nn.LogSoftmax()
     criterion = nn.NLLLoss()
     softmax_val = softmax(output)
-    loss = criterion(softmax_val, Variable(torch.LongTensor([gold_output])))
+    loss = criterion(softmax_val.view(1, 2), Variable(torch.LongTensor([gold_output]), requires_grad=False))
 
     loss.backward()
     optimizer.step()
@@ -151,35 +150,44 @@ def train_one_sentence(sentence, embeddings, gold_output, w, pi, eta, pattern_le
 
 # Train model.
 # sentences
-def train_all(sentences, embeddings, gold_outputs, num_patterns, pattern_length, word_dim, n_iterations, mlp_hidden_dim, \
+def train_all(sentences,
+              embeddings,
+              gold_outputs,
+              num_patterns,
+              pattern_length,
+              word_dim,
+              n_iterations,
+              mlp_hidden_dim,
               num_classes):
     """Train model. sentences -- """
     sigmoid = nn.Sigmoid()
 
     # TODO: why do we need `requires_grad=True`
-    w = Variable(torch.normal(torch.zeros(num_patterns, pattern_length, pattern_length, word_dim), 1), requires_grad=True)
+    ws = [Variable(torch.normal(torch.zeros(pattern_length, pattern_length, word_dim), 1), requires_grad=True)
+          for _ in range(num_patterns)]
 
-    # pi = Variable(torch.zeros(pattern_length))
-    # fixed, not parameters
-    pi = Variable(torch.zeros(1, pattern_length))
+    # start state distribution
+    pi = Variable(torch.zeros(1, pattern_length), requires_grad=False)
     pi[0, 0] = 1
-    # eta = Variable(torch.zeros(pattern_length))
-    eta = Variable(torch.zeros(pattern_length, 1))
+    # end state distribution
+    eta = Variable(torch.zeros(pattern_length, 1), requires_grad=False)
     eta[-1, 0] = 1
 
     mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
 
-    optimizer = torch.optim.Adam(list(mlp.parameters()) + [w], lr=0.0001)
+    optimizer = torch.optim.Adam(list(mlp.parameters()) + ws, lr=0.0001)
 
     indices = list(range(len(sentences)))
 
-    for _ in range(n_iterations):
+    for it in range(n_iterations):
+        print("iteration:", it)
+
         np.random.shuffle(indices)
 
         for i in indices:
             sentence = sentences[i]
             gold = gold_outputs[i]
-            train_one_sentence(sentence, embeddings, gold, w, pi, eta, pattern_length, sigmoid, mlp, optimizer)
+            train_one_sentence(sentence, embeddings, gold, ws, pi, eta, pattern_length, sigmoid, mlp, optimizer)
 
 
 if __name__ == '__main__':
