@@ -15,6 +15,10 @@ from data import read_embeddings, read_docs, read_labels
 from mlp import MLP
 
 
+def fixed_var(tensor):
+    return Variable(tensor, requires_grad=False)
+
+
 class SoftPattern(Module):
     """ A single soft pattern """
 
@@ -28,11 +32,11 @@ class SoftPattern(Module):
         word_dim = embeddings.size()[1]
         # parameters that determine state transition probabilities based on current word
         self.w = Parameter(randn(pattern_length, pattern_length, word_dim))
-        # start state distribution (fixed)
-        self.start = Variable(zeros(1, pattern_length), requires_grad=False)
+        # start state distribution (always start in first state)
+        self.start = fixed_var(zeros(1, pattern_length))
         self.start[0, 0] = 1
-        # end state distribution (fixed, for now)
-        self.final = Variable(zeros(pattern_length, 1), requires_grad=False)
+        # end state distribution (always end in last state)
+        self.final = fixed_var(zeros(pattern_length, 1))
         self.final[-1, 0] = 1
 
     def forward(self, doc):
@@ -52,7 +56,7 @@ class SoftPattern(Module):
         result = Variable(zeros(self.pattern_length, self.pattern_length))
         for i in range(self.pattern_length):
             # only need to look at main diagonal and the two diagonals above it
-            for j in range(i, min(i + 2, self.pattern_length - 1)):
+            for j in range(i, min(i + 2, self.pattern_length)):
                 result[i, j] = sigmoid(dot(self.w[i, j], word_vec) - log(norm(self.w[i, j])))
 
         return result
@@ -71,7 +75,7 @@ class SoftPatternClassifier(Module):
                  num_classes,
                  embeddings):
         super(SoftPatternClassifier, self).__init__()
-        self.embeddings = Variable(FloatTensor(embeddings), requires_grad=False)
+        self.embeddings = fixed_var(FloatTensor(embeddings))
         self.patterns = [SoftPattern(pattern_length, self.embeddings) for _ in range(num_patterns)]
         self.mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
         self.all_params = [p for model in self.patterns + [self.mlp]
@@ -89,7 +93,7 @@ def train_one_doc(model, doc, gold_output, optimizer):
     output = model.forward(doc)
     loss = nll_loss(
         log_softmax(output).view(1, 2),
-        Variable(LongTensor([gold_output]), requires_grad=False)
+        fixed_var(LongTensor([gold_output]))
     )
     loss.backward()
     optimizer.step()
@@ -106,7 +110,11 @@ def train(docs,
           num_classes,
           learning_rate):
     """ Train a model on all the given docs """
-    model = SoftPatternClassifier(num_patterns, pattern_length, mlp_hidden_dim, num_classes, embeddings)
+    model = SoftPatternClassifier(num_patterns,
+                                  pattern_length,
+                                  mlp_hidden_dim,
+                                  num_classes,
+                                  embeddings)
     optimizer = Adam(model.all_params, lr=learning_rate)
 
     for it in range(num_iterations):
@@ -116,8 +124,8 @@ def train(docs,
         np.random.shuffle(docs)
 
         loss = 0.0
-        for sentence, gold in zip(docs, gold_outputs):
-            loss += train_one_doc(model, sentence, gold, optimizer)
+        for doc, gold in zip(docs, gold_outputs):
+            loss += train_one_doc(model, doc, gold, optimizer)
         print("loss:", loss / len(docs))
 
 
