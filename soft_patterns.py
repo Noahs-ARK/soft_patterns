@@ -2,6 +2,7 @@
 
 import sys
 import argparse
+from time import monotonic
 
 import numpy as np
 from torch import FloatTensor, LongTensor, dot, log, mm, norm, randn, zeros
@@ -116,17 +117,22 @@ def train(docs,
                                   num_classes,
                                   embeddings)
     optimizer = Adam(model.all_params, lr=learning_rate)
+    start_time = monotonic()
 
     for it in range(num_iterations):
-        print("iteration:", it,
-              # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
-              end=" ", flush=True)
         np.random.shuffle(docs)
 
         loss = 0.0
         for doc, gold in zip(docs, gold_outputs):
             loss += train_one_doc(model, doc, gold, optimizer)
-        print("loss:", loss / len(docs))
+        # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
+        print(
+            "iteration: {:>9,}\ttime: {:>9,.3f}s\tloss: {:>12,.3f}".format(
+                it,
+                monotonic() - start_time,
+                loss / len(docs)
+            )
+        )
 
 
 def main(args):
