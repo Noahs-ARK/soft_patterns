@@ -4,23 +4,22 @@ import string
 import numpy as np
 
 
-def read_embeddings(file):
-    vocab = dict()
-    vocab["*UNK*"] = 0
+def read_embeddings(filename):
+    vocab = {"*UNK*":  0}
 
     vecs = []
     printable = set(string.printable)
 
-    print("Reading", file)
-    with open(file, encoding='utf-8') as ifh:
-        first_line = ifh.readline()
+    print("Reading", filename)
+    with open(filename, encoding='utf-8') as input_file:
+        first_line = input_file.readline()
 
         e = first_line.rstrip().split()
 
         # Header line
         if len(e) == 2:
             dim = int(e[1])
-            vecs.append(np.zeros(dim))
+            vecs.append(np.zeros(dim))  # UNK embedding (at idx 0) is all zeros
         else:
             dim = len(e) - 1
             vecs.append(np.zeros(dim))
@@ -28,10 +27,11 @@ def read_embeddings(file):
             vocab[e[0]] = 1
             vecs.append(np.fromstring(" ".join(e[1:]), dtype=float, sep=' '))
 
-        for l in ifh:
-            e = l.rstrip().split(" ", 1)
+        for line in input_file:
+            e = line.rstrip().split(" ", 1)
             word = e[0]
 
+            # TODO: this is for debugging only
             if len(vocab) == 10:
                 break
             good = 1
@@ -51,14 +51,12 @@ def read_embeddings(file):
     return vocab, vecs, dim
 
 
-def read_sentences(filename, vocab):
-    with open(filename, encoding='utf-8') as ifh:
-        train_words = [x.rstrip().split() for x in ifh]
-        train_data = [[vocab[w] if w in vocab else 0 for w in sent] for sent in train_words]
-    return train_data
+def read_docs(filename, vocab):
+    with open(filename, encoding='utf-8') as input_file:
+        train_words = (line.rstrip().split() for line in input_file)
+        return [[vocab[w] if w in vocab else 0 for w in doc] for doc in train_words]
 
 
 def read_labels(filename):
-    with open(filename) as ifh:
-        train_labels = [int(x.rstrip()) for x in ifh]
-    return train_labels
+    with open(filename) as input_file:
+        return [int(line.rstrip()) for line in input_file]

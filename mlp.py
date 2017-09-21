@@ -1,4 +1,5 @@
-from torch.nn import Linear, Module, ReLU
+from torch.nn import Linear, Module
+from torch.nn.functional import relu
 
 
 class MLP(Module):
@@ -11,7 +12,6 @@ class MLP(Module):
 
         self.layer1 = Linear(input_dim, hidden_layer_dim)
         self.layer2 = Linear(hidden_layer_dim, num_classes)
-        self.relu = ReLU()
 
     def forward(self, x):
-        return self.layer2(self.relu(self.layer1(x)))
+        return self.layer2(relu(self.layer1(x)))
