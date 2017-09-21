@@ -97,15 +97,15 @@ def train_one_doc(model, doc, gold_output, optimizer):
 
 
 def train(docs,
-          embeddings,
           gold_outputs,
+          embeddings,
           num_patterns,
           pattern_length,
           num_iterations,
           mlp_hidden_dim,
           num_classes,
           learning_rate):
-    """ Train all sentences """
+    """ Train a model on all the given docs """
     model = SoftPatternClassifier(num_patterns, pattern_length, mlp_hidden_dim, num_classes, embeddings)
     optimizer = Adam(model.all_params, lr=learning_rate)
 
@@ -149,8 +149,8 @@ def main(args):
     # dev_labels = read_labels(args.vl)  # not being used yet
 
     train(train_data,
-          embeddings,
           train_labels,
+          embeddings,
           num_patterns,
           pattern_length,
           num_iterations,
