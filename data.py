@@ -31,9 +31,9 @@ def read_embeddings(filename):
             e = line.rstrip().split(" ", 1)
             word = e[0]
 
-            # TODO: this is for debugging only
-            if len(vocab) == 10:
-                break
+            # # TODO: this is for debugging only
+            # if len(vocab) == 10:
+            #     break
             good = 1
             for i in list(word):
                 if i not in printable:

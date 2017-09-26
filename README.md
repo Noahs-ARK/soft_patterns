@@ -14,7 +14,8 @@ I also had set the following env var on Mac:
 ## Training
 
     datadir="/Users/sam/data/stanford_sentiment_binary" # or wherever you download the dataset
-    wordvecfile="${datadir}/stanford_sentiment_binary_vecs.txt" # e.g.
+    wordvecfile="${datadir}/../glove/glove.6B.50d.txt" # e.g.
+
     python3 soft_patterns.py \
         -e ${wordvecfile} \
         --td ${datadir}/train.data \

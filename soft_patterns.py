@@ -5,6 +5,7 @@ import argparse
 from time import monotonic
 
 import numpy as np
+import torch
 from torch import FloatTensor, LongTensor, dot, log, mm, norm, randn, zeros
 from torch.autograd import Variable
 from torch.functional import stack
@@ -18,6 +19,12 @@ from mlp import MLP
 
 def fixed_var(tensor):
     return Variable(tensor, requires_grad=False)
+
+
+def argmax(output):
+    """ only works for 1xn tensors """
+    _, am = torch.max(output, 1)
+    return am[0]
 
 
 class SoftPattern(Module):
@@ -87,6 +94,10 @@ class SoftPatternClassifier(Module):
         scores = stack([p.forward(doc) for p in self.patterns])
         return self.mlp.forward(scores.t())
 
+    def predict(self, doc):
+        output = self.forward(doc).data
+        return int(argmax(output))
+
 
 def train_one_doc(model, doc, gold_output, optimizer):
     """Train on one doc. """
@@ -101,7 +112,21 @@ def train_one_doc(model, doc, gold_output, optimizer):
     return loss.data[0]
 
 
-def train(data,
+def evaluate_accuracy(model, data):
+    n = float(len(data))
+    # for doc, gold in data[:10]:
+    #     print(gold, model.predict(doc))
+    outputs = [model.forward(doc).data for doc, gold in data[:10]]
+    # print(outputs)
+    predicted = [model.predict(doc) for doc, gold in data]
+    print("num predicted 1s", sum(predicted))
+    print("num gold 1s", sum(gold for _, gold in data))
+    correct = (1 for pred, (_, gold) in zip(predicted, data) if pred == gold)
+    return sum(correct) / n
+
+
+def train(train_data,
+          dev_data,
           model,
           num_iterations,
           learning_rate):
@@ -110,19 +135,29 @@ def train(data,
     start_time = monotonic()
 
     for it in range(num_iterations):
-        np.random.shuffle(data)
+        np.random.shuffle(train_data)
 
         loss = 0.0
-        for doc, gold in data:
+        for i, (doc, gold) in enumerate(train_data):
+            if i % 10 == 9:
+                print(".", end="", flush=True)
             loss += train_one_doc(model, doc, gold, optimizer)
+
+        train_acc = evaluate_accuracy(model, train_data)
+        dev_acc = evaluate_accuracy(model, dev_data)
         # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
         print(
-            "iteration: {:>9,}\ttime: {:>9,.3f}s\tloss: {:>12,.3f}".format(
+            "iteration: {:>7,} time: {:>9,.3f}s loss: {:>12,.3f} train_acc: {:>8,.3f}% dev_acc: {:>8,.3f}%".format(
+            # "iteration: {:>7,} time: {:>9,.3f}s loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
                 it,
                 monotonic() - start_time,
-                loss / len(data)
+                loss / len(train_data),
+                train_acc * 100,
+                dev_acc * 100
             )
         )
+
+    return model
 
 
 def main(args):
@@ -134,23 +169,28 @@ def main(args):
 
     vocab, embeddings, word_dim = read_embeddings(args.embedding_file)
 
-    train_data = read_docs(args.td, vocab)
-    # dev_data = read_training_data(args.vd, vocab)  # not being used yet
-
+    train_input = read_docs(args.td, vocab)
     train_labels = read_labels(args.tl)
 
-    # truncate data (to debug faster)
-    n = args.num_train_instances
-    if n is not None:
-        train_data = train_data[:n]
-        train_labels = train_labels[:n]
-
-    print("training instances:", len(train_data))
+    print("training instances:", len(train_input))
 
     num_classes = len(set(train_labels))
     print("num_classes:", num_classes)
 
-    # dev_labels = read_labels(args.vl)  # not being used yet
+    # truncate data (to debug faster)
+    n = args.num_train_instances
+    train_data = list(zip(train_input, train_labels))
+    np.random.shuffle(train_data)
+
+    dev_input = read_docs(args.vd, vocab)
+    dev_labels = read_labels(args.vl)
+    dev_data = list(zip(dev_input, dev_labels))
+    np.random.shuffle(dev_data)
+
+    if n is not None:
+        n = int(n)
+        train_data = train_data[:n]
+        dev_data = dev_data[:n]
 
     model = SoftPatternClassifier(num_patterns,
                                   pattern_length,
@@ -158,7 +198,8 @@ def main(args):
                                   num_classes,
                                   embeddings)
 
-    train(list(zip(train_data, train_labels)),
+    train(train_data,
+          dev_data,
           model,
           num_iterations,
           args.learning_rate)
@@ -173,10 +214,9 @@ if __name__ == '__main__':
     parser.add_argument("-s", "--seed", help="Random seed", default=100)
     parser.add_argument("-i", "--num_iterations", help="Number of iterations", default=10)
     parser.add_argument("-p", "--pattern_length", help="Length of pattern", default=6)
-    parser.add_argument("-k", "--num_patterns", help="Number of patterns", default=2)
+    parser.add_argument("-k", "--num_patterns", help="Number of patterns", type=int, default=2)
     parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", default=10)
-    # TODO: default=None
-    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", default=100)
+    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", default=None)
     parser.add_argument("--td", help="Train data file", required=True)
     parser.add_argument("--tl", help="Train labels file", required=True)
     parser.add_argument("--vd", help="Validation data file", required=True)
