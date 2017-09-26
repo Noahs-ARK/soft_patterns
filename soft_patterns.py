@@ -101,36 +101,26 @@ def train_one_doc(model, doc, gold_output, optimizer):
     return loss.data[0]
 
 
-def train(docs,
-          gold_outputs,
-          embeddings,
-          num_patterns,
-          pattern_length,
+def train(data,
+          model,
           num_iterations,
-          mlp_hidden_dim,
-          num_classes,
           learning_rate):
     """ Train a model on all the given docs """
-    model = SoftPatternClassifier(num_patterns,
-                                  pattern_length,
-                                  mlp_hidden_dim,
-                                  num_classes,
-                                  embeddings)
     optimizer = Adam(model.all_params, lr=learning_rate)
     start_time = monotonic()
 
     for it in range(num_iterations):
-        np.random.shuffle(docs)
+        np.random.shuffle(data)
 
         loss = 0.0
-        for doc, gold in zip(docs, gold_outputs):
+        for doc, gold in data:
             loss += train_one_doc(model, doc, gold, optimizer)
         # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
         print(
             "iteration: {:>9,}\ttime: {:>9,.3f}s\tloss: {:>12,.3f}".format(
                 it,
                 monotonic() - start_time,
-                loss / len(docs)
+                loss / len(data)
             )
         )
 
@@ -162,14 +152,15 @@ def main(args):
 
     # dev_labels = read_labels(args.vl)  # not being used yet
 
-    train(train_data,
-          train_labels,
-          embeddings,
-          num_patterns,
-          pattern_length,
+    model = SoftPatternClassifier(num_patterns,
+                                  pattern_length,
+                                  mlp_hidden_dim,
+                                  num_classes,
+                                  embeddings)
+
+    train(list(zip(train_data, train_labels)),
+          model,
           num_iterations,
-          mlp_hidden_dim,
-          num_classes,
           args.learning_rate)
 
     return 0
