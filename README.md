@@ -21,4 +21,5 @@ I also had set the following env var on Mac:
         --td ${datadir}/train.data \
         --tl ${datadir}/train.labels \
         --vd ${datadir}/dev.data \
-        --vl ${datadir}/dev.labels
+        --vl ${datadir}/dev.labels \
+        --model_save_dir ./experiments/blah/

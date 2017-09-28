@@ -23,17 +23,17 @@ def read_embeddings(filename):
         else:
             dim = len(e) - 1
             vecs.append(np.zeros(dim))
-
-            vocab[e[0]] = 1
-            vecs.append(np.fromstring(" ".join(e[1:]), dtype=float, sep=' '))
+            e = first_line.rstrip().split(" ", 1)
+            add_vec(e, vecs, vocab)
 
         for line in input_file:
             e = line.rstrip().split(" ", 1)
             word = e[0]
 
-            # # TODO: this is for debugging only
-            # if len(vocab) == 10:
-            #     break
+            # TODO: this is for debugging only
+            if len(vocab) == 50000:
+                break
+
             good = 1
             for i in list(word):
                 if i not in printable:
@@ -44,11 +44,19 @@ def read_embeddings(filename):
                 # print(n,"is not good")
                 continue
 
-            vocab[e[0]] = len(vocab)
-            vecs.append(np.fromstring(e[1], dtype=float, sep=' '))
+            add_vec(e, vecs, vocab)
 
     print("Done reading", len(vecs), "vectors of dimension", dim)
-    return vocab, vecs, dim
+    reverse_vocab = {
+        i: name for name, i in vocab.items()
+    }
+    return vocab, reverse_vocab, vecs, dim
+
+
+def add_vec(v, vecs, vocab):
+    vocab[v[0]] = len(vocab)
+    vec = np.fromstring(v[1], dtype=float, sep=' ')
+    vecs.append(vec / np.linalg.norm(vec))
 
 
 def read_docs(filename, vocab):
