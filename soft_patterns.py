@@ -51,6 +51,7 @@ class SoftPattern(Module):
             for j in range(pattern_length):
                 w_data[i, j] = w_data[i, j] / norm(w_data[i, j])  # unit length
         self.w = Parameter(w_data)
+        self.b = Parameter(randn(pattern_length, pattern_length))
         # start state distribution (always start in first state)
         self.start = fixed_var(zeros(1, pattern_length))
         self.start[0, 0] = 1
@@ -79,7 +80,7 @@ class SoftPattern(Module):
         #         result[i, j] = sigmoid(dot(self.w[i, j], word_vec) - log(norm(self.w[i, j])))
         for i in range(self.pattern_length - 1):
             j = i + 1
-            result[i, j] = sigmoid(dot(self.w[i, j], word_vec) - log(norm(self.w[i, j])))
+            result[i, j] = sigmoid(dot(self.w[i, j], word_vec) + self.b[i, j])
 
         return result
 
@@ -89,14 +90,17 @@ class SoftPattern(Module):
             norm(self.w[i, i + 1]).data[0]
             for i in range(self.pattern_length - 1)
         ]
+        biases = [
+            self.b[i, i + 1].data[0]
+            for i in range(self.pattern_length - 1)
+        ]
         embeddings = torch.transpose(self.embeddings.data, 0, 1)
         neighbors = [
             nearest_neighbor(self.w[i, i + 1].data, embeddings, self.vocab)
             for i in range(self.pattern_length - 1)
         ]
-        print("norms", norms)
+        print("biases", biases, "norms", norms)
         print("neighbors", neighbors)
-
 
 
 class SoftPatternClassifier(Module):
