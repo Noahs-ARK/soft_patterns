@@ -241,6 +241,9 @@ def main(args):
 
     model_save_dir = args.model_save_dir
 
+    if not os.path.exists(model_save_dir):
+        os.makedirs(model_save_dir)
+
     train(train_data,
           dev_data,
           model,
