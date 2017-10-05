@@ -7,7 +7,7 @@ from time import monotonic
 import numpy as np
 import os
 import torch
-from torch import FloatTensor, LongTensor, dot, log, mm, norm, randn, zeros
+from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros
 from torch.autograd import Variable
 from torch.functional import stack
 from torch.nn import Module, Parameter
@@ -34,6 +34,12 @@ def nearest_neighbor(w, embeddings, vocab):
     return vocab[argmax(mm(w.view(1, w.size()[0]), embeddings))]
 
 
+def normalize(data):
+    length = data.size()[0]
+    for i in range(length):
+        data[i] = data[i] / norm(data[i])  # unit length
+
+
 class SoftPattern(Module):
     """ A single soft pattern """
 
@@ -46,14 +52,23 @@ class SoftPattern(Module):
         self.pattern_length = pattern_length
         # word vectors (fixed)
         self.embeddings = embeddings
-        word_dim = embeddings.size()[1]
+        word_dim = embeddings.size()[0]
         # parameters that determine state transition probabilities based on current word
-        w_data = randn(pattern_length, pattern_length, word_dim)
-        for i in range(pattern_length):
-            for j in range(pattern_length):
-                w_data[i, j] = w_data[i, j] / norm(w_data[i, j])  # unit length
-        self.w = Parameter(w_data)
-        self.b = Parameter(randn(pattern_length, pattern_length))
+        # self_loop_data = randn(word_dim, pattern_length)
+        one_forward_data = randn(word_dim, pattern_length - 1)
+        # two_forward_data = randn(word_dim, pattern_length - 2)
+        # w_data = randn(pattern_length, pattern_length, word_dim)
+        # normalize(self_loop_data)
+        normalize(one_forward_data)
+        # normalize(two_forward_data)
+        # self.w = Parameter(w_data)
+        # self.self_loop = Parameter(self_loop_data)
+        self.one_forward = Parameter(one_forward_data)
+        # self.two_forward = Parameter(two_forward_data)
+        # self.b = Parameter(randn(pattern_length, pattern_length))
+        # self.self_loop_bias = Parameter(randn(1, pattern_length))
+        self.one_forward_bias = Parameter(randn(1, pattern_length - 1))
+        # self.two_forward_bias = Parameter(randn(1, pattern_length - 2))
         # start state distribution (always start in first state)
         self.start = fixed_var(zeros(1, pattern_length))
         self.start[0, 0] = 1
@@ -68,12 +83,25 @@ class SoftPattern(Module):
         """
         score = Variable(zeros(1))
         hidden = self.start.clone()
+        z1 = Variable(zeros(1, 1))
+        # z2 = Variable(zeros(1, 2))
         for word_index in doc:
-            x = self.embeddings[word_index]
-            hidden = mm(hidden, self.transition_matrix(x)) + self.start
-            score[0] = score[0] + mm(hidden, self.final)
+            x = self.embeddings[:, word_index].view(1, self.embeddings.size()[0])
+            self_loop_result, one_forward_result, two_forward_result = \
+                self.transition_matrix(x)
+            # mul(hidden, self_loop_result) + \
+            # print("z1", z1.size(),
+            #       "hidden", hidden.size(),
+            #       "one_forward_result", one_forward_result.size(),
+            #       # hidden[:, :-1].size(), one_forward_result.size(),
+            #       "mul", mul(hidden[:, :-1], one_forward_result).size())
+            hidden = self.start + \
+                         cat((z1, mul(hidden[:, :-1], one_forward_result)), 1)
+                         # cat((z2, mul(hidden[:, :-2], two_forward_result)), 1)
+            score[0] = score[0] + hidden[0, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
         return score[0]
 
+    # FIXME: doesn't work with new vectorized transition matrices
     def get_top_scoring_sequence(self, doc):
         """
         Get top scoring sequence in doc for this pattern (for intepretation purposes)
@@ -84,7 +112,7 @@ class SoftPattern(Module):
 
         for i in range(len(doc)-1):
             word_index = doc[i]
-            x = self.embeddings[word_index]
+            x = self.embeddings[:, word_index]
             score = Variable(zeros(1))
             hidden = mm(self.start.clone(), self.transition_matrix(x))
             score[0] = score[0] + mm(hidden, self.final)
@@ -96,7 +124,7 @@ class SoftPattern(Module):
 
             for j in range(i+1, len(doc)):
                 word_index2 = doc[j]
-                y = self.embeddings[word_index2]
+                y = self.embeddings[:, word_index2]
                 hidden = mm(hidden, self.transition_matrix(y))
                 score[0] = score[0] + mm(hidden, self.final)
 
@@ -109,17 +137,25 @@ class SoftPattern(Module):
         return max_score[0], max_start, max_end
 
     def transition_matrix(self, word_vec):
-        result = Variable(zeros(self.pattern_length, self.pattern_length))
+        # result = Variable(zeros(self.pattern_length, self.pattern_length))
         # for i in range(self.pattern_length):
         #     # only need to look at main diagonal and the two diagonals above it
         #     for j in range(i, min(i + 2, self.pattern_length)):
         #         result[i, j] = sigmoid(dot(self.w[i, j], word_vec) - log(norm(self.w[i, j])))
-        for i in range(self.pattern_length - 1):
-            j = i + 1
-            result[i, j] = sigmoid(dot(self.w[i, j], word_vec) + self.b[i, j])
+        # for i in range(self.pattern_length - 1):
+        #     j = i + 1
+        #     result[i, j] = sigmoid(dot(self.w[i, j], word_vec) + self.b[i, j])
+        # self_loop_result = sigmoid(mm(word_vec, self.self_loop) + self.self_loop_bias)
+        self_loop_result = None
+        # print(self.one_forward.size(), word_vec.size(), self.one_forward_bias.size())
+        # print(mm(word_vec.view(1, word_vec.size()[0]), self.one_forward).size())
+        one_forward_result = sigmoid(mm(word_vec, self.one_forward) + self.one_forward_bias)
+        # two_forward_result = sigmoid(mm(word_vec, self.two_forward) + self.two_forward_bias)
+        two_forward_result = None
 
-        return result
+        return self_loop_result, one_forward_result, two_forward_result
 
+    # FIXME: doesn't work with new vectorized transition matrices
     def visualize_pattern(self, dev_set = None, dev_text = None, n_top_scoring = 5):
         # 1 above main diagonal
         norms = [
@@ -130,7 +166,7 @@ class SoftPattern(Module):
             self.b[i, i + 1].data[0]
             for i in range(self.pattern_length - 1)
         ]
-        embeddings = torch.transpose(self.embeddings.data, 0, 1)
+        embeddings = self.embeddings.data  # torch.transpose(self.embeddings.data, 0, 1)
         neighbors = [
             nearest_neighbor(self.w[i, i + 1].data, embeddings, self.vocab)
             for i in range(self.pattern_length - 1)
@@ -151,7 +187,7 @@ class SoftPattern(Module):
 
 
             print("Top scoring", [(" ".join(dev_text[k][scores[k][1]:scores[k][2]]),
-                                   round(scores[k][0].data[0],3)) for k in sorted_keys[last_n:]])
+                                   round(scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]])
 
 
 class SoftPatternClassifier(Module):
@@ -169,7 +205,7 @@ class SoftPatternClassifier(Module):
                  vocab):
         super(SoftPatternClassifier, self).__init__()
         self.vocab = vocab
-        self.embeddings = fixed_var(FloatTensor(embeddings))
+        self.embeddings = fixed_var(FloatTensor(embeddings).t())
         self.patterns = torch.nn.ModuleList([SoftPattern(pattern_length, self.embeddings, vocab) for _ in range(num_patterns)])
         self.mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
         print ("# params:", sum(p.nelement() for p in self.parameters()))
@@ -222,8 +258,8 @@ def train(train_data,
     for it in range(num_iterations):
         np.random.shuffle(train_data)
 
-        for pattern in model.patterns:
-            pattern.visualize_pattern()
+        # for pattern in model.patterns:
+        #     pattern.visualize_pattern()
 
         loss = 0.0
         for i, (doc, gold) in enumerate(train_data):
@@ -288,10 +324,8 @@ def main(args):
 
     print("num_classes:", num_classes)
 
-
-
     if n is not None:
-        if args.input_model is not None:
+        if args.input_model is None:
             train_data = train_data[:n]
         dev_data = dev_data[:n]
 
@@ -318,8 +352,8 @@ def main(args):
         state_dict = torch.load(args.input_model)
         model.load_state_dict(state_dict)
 
-        for pattern in model.patterns:
-            pattern.visualize_pattern(dev_data, dev_text)
+        # for pattern in model.patterns:
+        #     pattern.visualize_pattern(dev_data, dev_text)
 
         dev_acc = evaluate_accuracy(model, dev_data)
 
@@ -338,7 +372,7 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--pattern_length", help="Length of pattern", type=int, default=2)
     parser.add_argument("-k", "--num_patterns", help="Number of patterns", type=int, default=2)
     parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
-    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", default=None)
+    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
     parser.add_argument("--input_model", help="Input model (to run test and not train)")
     parser.add_argument("--td", help="Train data file")
