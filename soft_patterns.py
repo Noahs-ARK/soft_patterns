@@ -52,17 +52,16 @@ class SoftPattern(Module):
         self.pattern_length = pattern_length
         # word vectors (fixed)
         self.embeddings = embeddings
-        word_dim = embeddings.size()[0]
+        word_dim = embeddings.size()[1]
         self.num_diags = 3
         # parameters that determine state transition probabilities based on current word
-        diag_data = randn(self.num_diags, word_dim, pattern_length)
+        diag_data = randn(self.num_diags*pattern_length, word_dim)
         # self_loop_data = randn(word_dim, pattern_length)
         # one_forward_data = randn(word_dim, pattern_length - 1)
         # two_forward_data = randn(word_dim, pattern_length - 2)
         # w_data = randn(pattern_length, pattern_length, word_dim)
         # normalize(self_loop_data)
-        for diag in diag_data:
-            normalize(diag)
+        normalize(diag_data)
         self.diags = Parameter(diag_data)
         # normalize(two_forward_data)
         # self.w = Parameter(w_data)
@@ -73,7 +72,7 @@ class SoftPattern(Module):
         # self.b = Parameter(randn(pattern_length, pattern_length))
         # self.self_loop_bias = Parameter(randn(1, pattern_length))
         # self.one_forward_bias = Parameter(randn(1, pattern_length - 1))
-        self.bias = Parameter(randn(self.num_diags, pattern_length))
+        self.bias = Parameter(randn(self.num_diags*pattern_length,1))
         # self.two_forward_bias = Parameter(randn(1, pattern_length - 2))
         # start state distribution (always start in first state)
         self.start = fixed_var(zeros(1, pattern_length))
@@ -92,15 +91,15 @@ class SoftPattern(Module):
         z1 = Variable(zeros(1, 1))
         # z2 = Variable(zeros(1, 2))
         for word_index in doc:
-            x = self.embeddings[:, word_index].view(1, self.embeddings.size()[0])
-            self_loop_result, one_forward_result, two_forward_result = \
-                self.transition_matrix(x)
+            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
+            result = self.transition_matrix(x)
             # mul(hidden, self_loop_result) + \
             # print("z1", z1.size(),
             #       "hidden", hidden.size(),
             #       "one_forward_result", one_forward_result.size(),
             #       # hidden[:, :-1].size(), one_forward_result.size(),
             #       "mul", mul(hidden[:, :-1], one_forward_result).size())
+            one_forward_result = result[self.pattern_length:2*self.pattern_length-1,:].t()
             hidden = self.start + \
                          cat((z1, mul(hidden[:, :-1], one_forward_result)), 1)
                          # cat((z2, mul(hidden[:, :-2], two_forward_result)), 1)
@@ -118,7 +117,7 @@ class SoftPattern(Module):
 
         for i in range(len(doc)-1):
             word_index = doc[i]
-            x = self.embeddings[:, word_index]
+            x = self.embeddings[word_index, :]
             score = Variable(zeros(1))
             hidden = mm(self.start.clone(), self.transition_matrix(x))
             score[0] = score[0] + mm(hidden, self.final)
@@ -130,7 +129,7 @@ class SoftPattern(Module):
 
             for j in range(i+1, len(doc)):
                 word_index2 = doc[j]
-                y = self.embeddings[:, word_index2]
+                y = self.embeddings[word_index2, :]
                 hidden = mm(hidden, self.transition_matrix(y))
                 score[0] = score[0] + mm(hidden, self.final)
 
@@ -157,10 +156,9 @@ class SoftPattern(Module):
         # one_forward_result = sigmoid(mm(word_vec, self.one_forward) + self.one_forward_bias)
         # two_forward_result = sigmoid(mm(word_vec, self.two_forward) + self.two_forward_bias)
 
-        result = [
-            sigmoid(mm(word_vec, self.diag) + self.bias[i])
-            for i, diag in enumerate(self.diags)
-        ]
+        # print("wv size:",word_vec.size(), "diag size:",self.diags.size(), "bias size: ",self.bias.size())
+
+        result = sigmoid(mm(self.diags, word_vec) + self.bias)
 
         return result
 
@@ -214,7 +212,7 @@ class SoftPatternClassifier(Module):
                  vocab):
         super(SoftPatternClassifier, self).__init__()
         self.vocab = vocab
-        self.embeddings = fixed_var(FloatTensor(embeddings).t())
+        self.embeddings = fixed_var(FloatTensor(embeddings))
         self.patterns = torch.nn.ModuleList([SoftPattern(pattern_length, self.embeddings, vocab) for _ in range(num_patterns)])
         self.mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
         print ("# params:", sum(p.nelement() for p in self.parameters()))
@@ -348,8 +346,9 @@ def main(args):
     if args.input_model is None:
         model_save_dir = args.model_save_dir
 
-        if not os.path.exists(model_save_dir):
-            os.makedirs(model_save_dir)
+        if model_save_dir is not None:
+            if not os.path.exists(model_save_dir):
+                os.makedirs(model_save_dir)
 
         train(train_data,
               dev_data,
