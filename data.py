@@ -31,8 +31,8 @@ def read_embeddings(filename):
             word = e[0]
 
             # TODO: this is for debugging only
-            if len(vocab) == 5000:
-                break
+            # if len(vocab) == 5000:
+            #     break
 
             good = 1
             for i in list(word):
@@ -61,8 +61,8 @@ def add_vec(v, vecs, vocab):
 
 def read_docs(filename, vocab):
     with open(filename, encoding='utf-8') as input_file:
-        train_words = (line.rstrip().split() for line in input_file)
-        return [[vocab[w] if w in vocab else 0 for w in doc] for doc in train_words]
+        train_words = [line.rstrip().split() for line in input_file]
+        return [[vocab[w] if w in vocab else 0 for w in doc] for doc in train_words], train_words
 
 
 def read_labels(filename):

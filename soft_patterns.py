@@ -17,6 +17,8 @@ from torch.optim import Adam
 from data import read_embeddings, read_docs, read_labels
 from mlp import MLP
 
+# Running mode
+
 
 def fixed_var(tensor):
     return Variable(tensor, requires_grad=False)
@@ -72,6 +74,40 @@ class SoftPattern(Module):
             score[0] = score[0] + mm(hidden, self.final)
         return score[0]
 
+    def get_top_scoring_sequence(self, doc):
+        """
+        Get top scoring sequence in doc for this pattern (for intepretation purposes)
+        """
+        max_score = Variable(zeros(1))
+        max_start = -1
+        max_end = -1
+
+        for i in range(len(doc)-1):
+            word_index = doc[i]
+            x = self.embeddings[word_index]
+            score = Variable(zeros(1))
+            hidden = mm(self.start.clone(), self.transition_matrix(x))
+            score[0] = score[0] + mm(hidden, self.final)
+
+            if score[0].data[0] > max_score[0].data[0]:
+                max_score[0] = score[0]
+                max_start = i
+                max_end = i+1
+
+            for j in range(i+1, len(doc)):
+                word_index2 = doc[j]
+                y = self.embeddings[word_index2]
+                hidden = mm(hidden, self.transition_matrix(y))
+                score[0] = score[0] + mm(hidden, self.final)
+
+                if score[0].data[0] > max_score[0].data[0]:
+                    max_score[0] = score[0]
+                    max_start = i
+                    max_end = j+1
+
+        # print(max_score[0].data[0], max_start, max_end)
+        return max_score[0], max_start, max_end
+
     def transition_matrix(self, word_vec):
         result = Variable(zeros(self.pattern_length, self.pattern_length))
         # for i in range(self.pattern_length):
@@ -84,7 +120,7 @@ class SoftPattern(Module):
 
         return result
 
-    def visualize_pattern(self):
+    def visualize_pattern(self, dev_set = None, dev_text = None, n_top_scoring = 5):
         # 1 above main diagonal
         norms = [
             norm(self.w[i, i + 1]).data[0]
@@ -101,6 +137,21 @@ class SoftPattern(Module):
         ]
         print("biases", biases, "norms", norms)
         print("neighbors", neighbors)
+
+        if dev_set is not None:
+            # print(dev_set[0])
+            scores = [
+                self.get_top_scoring_sequence(doc) for doc,_ in dev_set
+            ]
+
+            # print(scores[0][0])
+            last_n = len(scores)-n_top_scoring
+            sorted_keys = sorted(range(len(scores)), key=lambda i: scores[i][0].data[0])
+            # print(sorted_keys)
+
+
+            print("Top scoring", [(" ".join(dev_text[k][scores[k][1]:scores[k][2]]),
+                                   round(scores[k][0].data[0],3)) for k in sorted_keys[last_n:]])
 
 
 class SoftPatternClassifier(Module):
@@ -193,43 +244,55 @@ def train(train_data,
                 dev_acc * 100
             )
         )
-        model_save_file = os.path.join(model_save_dir, "model_{}.pth".format(it))
-        torch.save(model.state_dict(), model_save_file)
+
+        if model_save_dir is not None:
+            model_save_file = os.path.join(model_save_dir, "model_{}.pth".format(it))
+            torch.save(model.state_dict(), model_save_file)
 
     return model
 
 
 def main(args):
     print(args)
-    pattern_length = int(args.pattern_length)
-    num_patterns = int(args.num_patterns)
-    num_iterations = int(args.num_iterations)
-    mlp_hidden_dim = int(args.mlp_hidden_dim)
+    pattern_length = args.pattern_length
+    num_patterns = args.num_patterns
+    n = args.num_train_instances
+    mlp_hidden_dim = args.mlp_hidden_dim
 
     vocab, reverse_vocab, embeddings, word_dim =\
         read_embeddings(args.embedding_file)
 
-    train_input = read_docs(args.td, vocab)
-    train_labels = read_labels(args.tl)
-
-    print("training instances:", len(train_input))
-
-    num_classes = len(set(train_labels))
-    print("num_classes:", num_classes)
-
-    # truncate data (to debug faster)
-    n = args.num_train_instances
-    train_data = list(zip(train_input, train_labels))
-    np.random.shuffle(train_data)
-
-    dev_input = read_docs(args.vd, vocab)
+    dev_input, dev_text = read_docs(args.vd, vocab)
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
-    np.random.shuffle(dev_data)
+
+    if args.input_model is None:
+        np.random.shuffle(dev_data)
+        num_iterations = args.num_iterations
+        if args.td is None or args.tl is None:
+            print("Both training data (--td) and training labels (--tl) required in training mode")
+            return -1
+
+        train_input, _ = read_docs(args.td, vocab)
+        train_labels = read_labels(args.tl)
+
+        print("training instances:", len(train_input))
+
+        num_classes = len(set(train_labels))
+
+        # truncate data (to debug faster)
+        train_data = list(zip(train_input, train_labels))
+        np.random.shuffle(train_data)
+    else:
+        num_classes = len(set(dev_labels))
+
+    print("num_classes:", num_classes)
+
+
 
     if n is not None:
-        n = int(n)
-        train_data = train_data[:n]
+        if args.input_model is not None:
+            train_data = train_data[:n]
         dev_data = dev_data[:n]
 
     model = SoftPatternClassifier(num_patterns,
@@ -239,17 +302,29 @@ def main(args):
                                   embeddings,
                                   reverse_vocab)
 
-    model_save_dir = args.model_save_dir
+    if args.input_model is None:
+        model_save_dir = args.model_save_dir
 
-    if not os.path.exists(model_save_dir):
-        os.makedirs(model_save_dir)
+        if not os.path.exists(model_save_dir):
+            os.makedirs(model_save_dir)
 
-    train(train_data,
-          dev_data,
-          model,
-          model_save_dir,
-          num_iterations,
-          args.learning_rate)
+        train(train_data,
+              dev_data,
+              model,
+              model_save_dir,
+              num_iterations,
+              args.learning_rate)
+    else:
+        state_dict = torch.load(args.input_model)
+        model.load_state_dict(state_dict)
+
+        for pattern in model.patterns:
+            pattern.visualize_pattern(dev_data, dev_text)
+
+        dev_acc = evaluate_accuracy(model, dev_data)
+
+        # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
+        print("Dev acc:", dev_acc * 100)
 
     return 0
 
@@ -258,15 +333,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    parser.add_argument("-s", "--seed", help="Random seed", default=100)
-    parser.add_argument("-i", "--num_iterations", help="Number of iterations", default=10)
-    parser.add_argument("-p", "--pattern_length", help="Length of pattern", default=2)
+    parser.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
+    parser.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
+    parser.add_argument("-p", "--pattern_length", help="Length of pattern", type=int, default=2)
     parser.add_argument("-k", "--num_patterns", help="Number of patterns", type=int, default=2)
-    parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", default=10)
+    parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
     parser.add_argument("-n", "--num_train_instances", help="Number of training instances", default=None)
-    parser.add_argument("-m", "--model_save_dir", help="where to save the trained model", required=True)
-    parser.add_argument("--td", help="Train data file", required=True)
-    parser.add_argument("--tl", help="Train labels file", required=True)
+    parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
+    parser.add_argument("--input_model", help="Input model (to run test and not train)")
+    parser.add_argument("--td", help="Train data file")
+    parser.add_argument("--tl", help="Train labels file")
     parser.add_argument("--vd", help="Validation data file", required=True)
     parser.add_argument("--vl", help="Validation labels file", required=True)
     parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
