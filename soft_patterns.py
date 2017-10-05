@@ -53,21 +53,27 @@ class SoftPattern(Module):
         # word vectors (fixed)
         self.embeddings = embeddings
         word_dim = embeddings.size()[0]
+        self.num_diags = 3
         # parameters that determine state transition probabilities based on current word
+        diag_data = randn(self.num_diags, word_dim, pattern_length)
         # self_loop_data = randn(word_dim, pattern_length)
-        one_forward_data = randn(word_dim, pattern_length - 1)
+        # one_forward_data = randn(word_dim, pattern_length - 1)
         # two_forward_data = randn(word_dim, pattern_length - 2)
         # w_data = randn(pattern_length, pattern_length, word_dim)
         # normalize(self_loop_data)
-        normalize(one_forward_data)
+        for diag in diag_data:
+            normalize(diag)
+        self.diags = Parameter(diag_data)
         # normalize(two_forward_data)
         # self.w = Parameter(w_data)
         # self.self_loop = Parameter(self_loop_data)
-        self.one_forward = Parameter(one_forward_data)
+        # self.one_forward = Parameter(one_forward_data)
+
         # self.two_forward = Parameter(two_forward_data)
         # self.b = Parameter(randn(pattern_length, pattern_length))
         # self.self_loop_bias = Parameter(randn(1, pattern_length))
-        self.one_forward_bias = Parameter(randn(1, pattern_length - 1))
+        # self.one_forward_bias = Parameter(randn(1, pattern_length - 1))
+        self.bias = Parameter(randn(self.num_diags, pattern_length))
         # self.two_forward_bias = Parameter(randn(1, pattern_length - 2))
         # start state distribution (always start in first state)
         self.start = fixed_var(zeros(1, pattern_length))
@@ -146,14 +152,17 @@ class SoftPattern(Module):
         #     j = i + 1
         #     result[i, j] = sigmoid(dot(self.w[i, j], word_vec) + self.b[i, j])
         # self_loop_result = sigmoid(mm(word_vec, self.self_loop) + self.self_loop_bias)
-        self_loop_result = None
         # print(self.one_forward.size(), word_vec.size(), self.one_forward_bias.size())
         # print(mm(word_vec.view(1, word_vec.size()[0]), self.one_forward).size())
-        one_forward_result = sigmoid(mm(word_vec, self.one_forward) + self.one_forward_bias)
+        # one_forward_result = sigmoid(mm(word_vec, self.one_forward) + self.one_forward_bias)
         # two_forward_result = sigmoid(mm(word_vec, self.two_forward) + self.two_forward_bias)
-        two_forward_result = None
 
-        return self_loop_result, one_forward_result, two_forward_result
+        result = [
+            sigmoid(mm(word_vec, self.diag) + self.bias[i])
+            for i, diag in enumerate(self.diags)
+        ]
+
+        return result
 
     # FIXME: doesn't work with new vectorized transition matrices
     def visualize_pattern(self, dev_set = None, dev_text = None, n_top_scoring = 5):
