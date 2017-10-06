@@ -55,14 +55,11 @@ class SoftPattern(Module):
         word_dim = embeddings.size()[1]
         self.num_diags = 3
         # parameters that determine state transition probabilities based on current word
-        diag_data = randn(self.num_diags*pattern_length, word_dim)
         # self_loop_data = randn(word_dim, pattern_length)
         # one_forward_data = randn(word_dim, pattern_length - 1)
         # two_forward_data = randn(word_dim, pattern_length - 2)
         # w_data = randn(pattern_length, pattern_length, word_dim)
         # normalize(self_loop_data)
-        normalize(diag_data)
-        self.diags = Parameter(diag_data)
         # normalize(two_forward_data)
         # self.w = Parameter(w_data)
         # self.self_loop = Parameter(self_loop_data)
@@ -72,14 +69,17 @@ class SoftPattern(Module):
         # self.b = Parameter(randn(pattern_length, pattern_length))
         # self.self_loop_bias = Parameter(randn(1, pattern_length))
         # self.one_forward_bias = Parameter(randn(1, pattern_length - 1))
-        self.bias = Parameter(randn(self.num_diags*pattern_length,1))
         # self.two_forward_bias = Parameter(randn(1, pattern_length - 2))
         # start state distribution (always start in first state)
-        self.start = fixed_var(zeros(1, pattern_length))
-        self.start[0, 0] = 1
-        # end state distribution (always end in last state)
-        self.final = fixed_var(zeros(pattern_length, 1))
-        self.final[-1, 0] = 1
+        # diag_data = randn(self.num_diags*pattern_length, word_dim)
+        # normalize(diag_data)
+        # self.diags = Parameter(diag_data)
+        # self.bias = Parameter(randn(self.num_diags*pattern_length,1))
+        # self.start = fixed_var(zeros(1, pattern_length))
+        # self.start[0, 0] = 1
+        # # end state distribution (always end in last state)
+        # self.final = fixed_var(zeros(pattern_length, 1))
+        # self.final[-1, 0] = 1
 
     def forward(self, doc):
         """
@@ -209,17 +209,71 @@ class SoftPatternClassifier(Module):
                  mlp_hidden_dim,
                  num_classes,
                  embeddings,
-                 vocab):
+                 vocab,
+                 num_diags = 3):
         super(SoftPatternClassifier, self).__init__()
         self.vocab = vocab
         self.embeddings = fixed_var(FloatTensor(embeddings))
-        self.patterns = torch.nn.ModuleList([SoftPattern(pattern_length, self.embeddings, vocab) for _ in range(num_patterns)])
+        # self.patterns = torch.nn.ModuleList([SoftPattern(pattern_length, self.embeddings, vocab) for _ in range(num_patterns)])
         self.mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
+
+        word_dim = len(embeddings[0])
+        self.num_diags = num_diags
+        self.pattern_length = pattern_length
+        diag_data = randn(num_patterns*self.num_diags*pattern_length, word_dim)
+        normalize(diag_data)
+        self.num_patterns = num_patterns
+        self.diags = Parameter(diag_data)
+        self.bias = Parameter(randn(num_patterns*self.num_diags*pattern_length,1))
+        self.start = fixed_var(zeros(1, pattern_length))
+        self.start[0, 0] = 1
+        # end state distribution (always end in last state)
+        self.final = fixed_var(zeros(pattern_length, 1))
+        self.final[-1, 0] = 1
+
         print ("# params:", sum(p.nelement() for p in self.parameters()))
 
     def forward(self, doc):
-        scores = stack([p.forward(doc) for p in self.patterns])
-        return self.mlp.forward(scores.t())
+        """
+        Calculate score for one document.
+        doc -- a sequence of indices that correspond to the word embedding matrix
+        """
+        scores = [Variable(zeros(1)) for _ in range(self.num_patterns)]
+        hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
+        z1 = Variable(zeros(1, 1))
+        # z2 = Variable(zeros(1, 2))
+        for word_index in doc:
+            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
+            result = self.transition_matrix(x)
+            # mul(hidden, self_loop_result) + \
+            # print("z1", z1.size(),
+            #       "hidden", hidden.size(),
+            #       "one_forward_result", one_forward_result.size(),
+            #       # hidden[:, :-1].size(), one_forward_result.size(),
+            #       "mul", mul(hidden[:, :-1], one_forward_result).size())
+            for p in range(self.num_patterns):
+                one_forward_result = self.get_subset(result, p,1)
+                # print("ofr:", one_forward_result.size(), "h:",hiddens[p].size())
+                # mul_res = mul(hiddens[p][:, :-1], one_forward_result)
+                hiddens[p] = self.start + \
+                         cat((z1, mul(hiddens[p][:, :-1], one_forward_result)), 1)
+                # cat((z2, mul(hidden[:, :-2], two_forward_result)), 1)
+                scores[p][0] = scores[p][0] + hiddens[p][0, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
+        return self.mlp.forward(stack([s[0] for s in scores]).t())
+
+            # scores = stack([p.forward(doc) for p in self.patterns])
+        # return self.mlp.forward(scores.t())
+
+    def transition_matrix(self, word_vec):
+        result = sigmoid(mm(self.diags, word_vec) + self.bias).t()
+
+        return result
+
+    def get_subset(self, result, pattern_index, diag_index):
+        large_n = self.num_diags * self.pattern_length
+        start = (pattern_index - 1) * large_n + diag_index*self.pattern_length
+        end = (pattern_index - 1) * large_n + (diag_index+1)*self.pattern_length - diag_index
+        return result[:, start:end]
 
     def predict(self, doc):
         output = self.forward(doc).data
@@ -270,7 +324,7 @@ def train(train_data,
 
         loss = 0.0
         for i, (doc, gold) in enumerate(train_data):
-            if i % 10 == 9:
+            if i % 100 == 99:
                 print(".", end="", flush=True)
             loss += train_one_doc(model, doc, gold, optimizer)
 
