@@ -238,7 +238,7 @@ class SoftPatternClassifier(Module):
         Calculate score for one document.
         doc -- a sequence of indices that correspond to the word embedding matrix
         """
-        scores = [Variable(zeros(1)) for _ in range(self.num_patterns)]
+        scores = Variable(zeros(self.num_patterns))
         hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
         z1 = Variable(zeros(1, 1))
         # z2 = Variable(zeros(1, 2))
@@ -252,14 +252,15 @@ class SoftPatternClassifier(Module):
             #       # hidden[:, :-1].size(), one_forward_result.size(),
             #       "mul", mul(hidden[:, :-1], one_forward_result).size())
             for p in range(self.num_patterns):
-                one_forward_result = self.get_subset(result, p,1)
+                start, end = self.get_subset(p,1)
+                one_forward_result = result[:,start:end]
                 # print("ofr:", one_forward_result.size(), "h:",hiddens[p].size())
                 # mul_res = mul(hiddens[p][:, :-1], one_forward_result)
                 hiddens[p] = self.start + \
                          cat((z1, mul(hiddens[p][:, :-1], one_forward_result)), 1)
                 # cat((z2, mul(hidden[:, :-2], two_forward_result)), 1)
-                scores[p][0] = scores[p][0] + hiddens[p][0, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
-        return self.mlp.forward(stack([s[0] for s in scores]).t())
+                scores[p] = scores[p] + hiddens[p][0, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
+        return self.mlp.forward(stack([s for s in scores]).t())
 
             # scores = stack([p.forward(doc) for p in self.patterns])
         # return self.mlp.forward(scores.t())
@@ -269,11 +270,11 @@ class SoftPatternClassifier(Module):
 
         return result
 
-    def get_subset(self, result, pattern_index, diag_index):
+    def get_subset(self, pattern_index, diag_index):
         large_n = self.num_diags * self.pattern_length
         start = (pattern_index - 1) * large_n + diag_index*self.pattern_length
         end = (pattern_index - 1) * large_n + (diag_index+1)*self.pattern_length - diag_index
-        return result[:, start:end]
+        return start, end
 
     def predict(self, doc):
         output = self.forward(doc).data
@@ -327,6 +328,8 @@ def train(train_data,
             if i % 100 == 99:
                 print(".", end="", flush=True)
             loss += train_one_doc(model, doc, gold, optimizer)
+
+        print("\n")
 
         train_acc = evaluate_accuracy(model, train_data)
         dev_acc = evaluate_accuracy(model, dev_data)

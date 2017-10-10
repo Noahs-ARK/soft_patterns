@@ -31,8 +31,8 @@ def read_embeddings(filename):
             word = e[0]
 
             # TODO: this is for debugging only
-            if len(vocab) == 5000:
-                break
+            # if len(vocab) == 5000:
+            #     break
 
             good = 1
             for i in list(word):
