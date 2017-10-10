@@ -217,10 +217,10 @@ class SoftPatternClassifier(Module):
         # self.patterns = torch.nn.ModuleList([SoftPattern(pattern_length, self.embeddings, vocab) for _ in range(num_patterns)])
         self.mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
 
-        word_dim = len(embeddings[0])
+        self.word_dim = len(embeddings[0])
         self.num_diags = num_diags
         self.pattern_length = pattern_length
-        diag_data = randn(num_patterns*self.num_diags*pattern_length, word_dim)
+        diag_data = randn(num_patterns*self.num_diags*pattern_length, self.word_dim)
         normalize(diag_data)
         self.num_patterns = num_patterns
         self.diags = Parameter(diag_data)
@@ -242,23 +242,13 @@ class SoftPatternClassifier(Module):
         #hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
         hiddens = fixed_var(zeros(self.num_patterns, self.pattern_length))
         hiddens[:,0] = 1
-        z1 = Variable(ones(1, 1))
+        z1 = Variable(ones(self.num_patterns, 1))
         # z2 = Variable(zeros(1, 2))
         for word_index in doc:
+            h_clone=hiddens.clone()
             x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
             result = self.transition_matrix(x)
-            # mul(hidden, self_loop_result) + \
-            # print("z1", z1.size(),
-            #       "hidden", hidden.size(),
-            #       "one_forward_result", one_forward_result.size(),
-            #       # hidden[:, :-1].size(), one_forward_result.size(),
-            #       "mul", mul(hidden[:, :-1], one_forward_result).size())
-            for p in range(self.num_patterns):
-                start, end = self.get_subset(p,1)
-                one_forward_result = result[:,start:end]
-                # print("ofr:", one_forward_result.size(), "h:",hiddens[p].size())
-                # mul_res = mul(hiddens[p][:, :-1], one_forward_result)
-                hiddens[p, :] = cat((z1, mul(hiddens[p, :-1].clone(), one_forward_result)), 1)
+            hiddens = cat((z1, mul(h_clone[:, :-1], result[:,1,:])), 1)
 
             scores = scores + hiddens[:, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
 
@@ -268,7 +258,9 @@ class SoftPatternClassifier(Module):
         # return self.mlp.forward(scores.t())
 
     def transition_matrix(self, word_vec):
-        result = sigmoid(mm(self.diags, word_vec) + self.bias).t()
+        result = sigmoid(mm(self.diags, word_vec) + self.bias).t().view(
+            self.num_patterns, self.num_diags, self.pattern_length
+        )
 
         return result
 
