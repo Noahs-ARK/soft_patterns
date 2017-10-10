@@ -7,7 +7,7 @@ from time import monotonic
 import numpy as np
 import os
 import torch
-from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros
+from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones
 from torch.autograd import Variable
 from torch.functional import stack
 from torch.nn import Module, Parameter
@@ -239,8 +239,10 @@ class SoftPatternClassifier(Module):
         doc -- a sequence of indices that correspond to the word embedding matrix
         """
         scores = Variable(zeros(self.num_patterns))
-        hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
-        z1 = Variable(zeros(1, 1))
+        #hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
+        hiddens = fixed_var(zeros(self.num_patterns, self.pattern_length))
+        hiddens[:,0] = 1
+        z1 = Variable(ones(1, 1))
         # z2 = Variable(zeros(1, 2))
         for word_index in doc:
             x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
@@ -256,11 +258,11 @@ class SoftPatternClassifier(Module):
                 one_forward_result = result[:,start:end]
                 # print("ofr:", one_forward_result.size(), "h:",hiddens[p].size())
                 # mul_res = mul(hiddens[p][:, :-1], one_forward_result)
-                hiddens[p] = self.start + \
-                         cat((z1, mul(hiddens[p][:, :-1], one_forward_result)), 1)
-                # cat((z2, mul(hidden[:, :-2], two_forward_result)), 1)
-                scores[p] = scores[p] + hiddens[p][0, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
-        return self.mlp.forward(stack([s for s in scores]).t())
+                hiddens[p, :] = cat((z1, mul(hiddens[p, :-1].clone(), one_forward_result)), 1)
+
+            scores = scores + hiddens[:, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
+
+        return self.mlp.forward(stack(scores).t())
 
             # scores = stack([p.forward(doc) for p in self.patterns])
         # return self.mlp.forward(scores.t())
