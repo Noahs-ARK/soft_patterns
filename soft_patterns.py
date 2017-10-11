@@ -7,7 +7,7 @@ from time import monotonic
 import numpy as np
 import os
 import torch
-from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones
+from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones, cuda
 from torch.autograd import Variable
 from torch.functional import stack
 from torch.nn import Module, Parameter
@@ -20,8 +20,11 @@ from mlp import MLP
 # Running mode
 
 
-def fixed_var(tensor):
-    return Variable(tensor, requires_grad=False)
+def fixed_var(tensor, gpu=False):
+    if gpu:
+        return Variable(tensor, requires_grad=False).cuda()
+    else:
+        return Variable(tensor, requires_grad=False)
 
 
 def argmax(output):
@@ -210,26 +213,34 @@ class SoftPatternClassifier(Module):
                  num_classes,
                  embeddings,
                  vocab,
+                 gpu=False,
                  num_diags = 3):
         super(SoftPatternClassifier, self).__init__()
         self.vocab = vocab
-        self.embeddings = fixed_var(FloatTensor(embeddings))
+        self.embeddings = fixed_var(FloatTensor(embeddings), gpu)
+
+        self.dtype = torch.FloatTensor
+        if gpu:
+            self.embeddings.cuda()
+            self.dtype = torch.cuda.FloatTensor
+
+        self.gpu = gpu
         # self.patterns = torch.nn.ModuleList([SoftPattern(pattern_length, self.embeddings, vocab) for _ in range(num_patterns)])
         self.mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
 
         self.word_dim = len(embeddings[0])
         self.num_diags = num_diags
         self.pattern_length = pattern_length
-        diag_data = randn(num_patterns*self.num_diags*pattern_length, self.word_dim)
+        diag_data = randn(num_patterns*self.num_diags*pattern_length, self.word_dim).type(self.dtype)
         normalize(diag_data)
         self.num_patterns = num_patterns
         self.diags = Parameter(diag_data)
-        self.bias = Parameter(randn(num_patterns*self.num_diags*pattern_length,1))
-        self.start = fixed_var(zeros(1, pattern_length))
-        self.start[0, 0] = 1
+        self.bias = Parameter(randn(num_patterns*self.num_diags*pattern_length,1).type(self.dtype))
+#        self.start = fixed_var(zeros(1, pattern_length))
+#        self.start[0, 0] = 1
         # end state distribution (always end in last state)
-        self.final = fixed_var(zeros(pattern_length, 1))
-        self.final[-1, 0] = 1
+#        self.final = fixed_var(zeros(pattern_length, 1))
+#        self.final[-1, 0] = 1
 
         print ("# params:", sum(p.nelement() for p in self.parameters()))
 
@@ -238,18 +249,39 @@ class SoftPatternClassifier(Module):
         Calculate score for one document.
         doc -- a sequence of indices that correspond to the word embedding matrix
         """
-        scores = Variable(zeros(self.num_patterns))
-        #hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
-        hiddens = fixed_var(zeros(self.num_patterns, self.pattern_length))
-        hiddens[:,0] = 1
-        z1 = Variable(ones(self.num_patterns, 1))
-        # z2 = Variable(zeros(1, 2))
-        for word_index in doc:
-            h_clone=hiddens.clone()
-            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
-            result = self.transition_matrix(x)
-            hiddens = cat((z1, mul(h_clone[:, :-1], result[:,1,:])), 1)
+        scores = Variable(zeros(self.num_patterns).type(self.dtype))
 
+        #hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
+        hiddens = Variable(zeros(self.num_patterns, self.pattern_length).type(self.dtype))
+
+        # Start state
+        hiddens[:,0] = 1
+
+        # adding start for each word in the document.
+
+        z1 = fixed_var(ones(self.num_patterns, 1), self.gpu)
+        z2 = fixed_var(zeros(self.num_patterns, 2), self.gpu)
+
+        for word_index in doc:
+            # Cloning hidden (otherwise pytorch is unhappy)
+            #h_clone=hiddens.clone()
+            #h_clone = hiddens
+
+            # reshaping word embeddings
+            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
+
+            if self.gpu:
+                x = x.cuda()
+
+            # computing transition matrix for all pattern
+            result = self.transition_matrix(x)
+
+            # New value for hidden state
+            hiddens = cat((z1, mul(hiddens[:, :-1], result[:,1,:-1])), 1) \
+             + mul(hiddens, result[:,0,:])
+#             + cat((z2, mul(hiddens[:, :-2], result[:,2,:-2])), 1) \
+
+            # Score is the final column of hiddens
             scores = scores + hiddens[:, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
 
         return self.mlp.forward(stack(scores).t())
@@ -261,6 +293,9 @@ class SoftPatternClassifier(Module):
         result = sigmoid(mm(self.diags, word_vec) + self.bias).t().view(
             self.num_patterns, self.num_diags, self.pattern_length
         )
+
+        if self.gpu:
+            result = result.cuda()
 
         return result
 
@@ -275,13 +310,13 @@ class SoftPatternClassifier(Module):
         return int(argmax(output))
 
 
-def train_one_doc(model, doc, gold_output, optimizer):
+def train_one_doc(model, doc, gold_output, optimizer, gpu=False):
     """Train on one doc. """
     optimizer.zero_grad()
     output = model.forward(doc)
     loss = nll_loss(
         log_softmax(output).view(1, 2),
-        fixed_var(LongTensor([gold_output]))
+        fixed_var(LongTensor([gold_output]), gpu)
     )
     loss.backward()
     optimizer.step()
@@ -306,7 +341,8 @@ def train(train_data,
           model,
           model_save_dir,
           num_iterations,
-          learning_rate):
+          learning_rate,
+          gpu=False):
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
     start_time = monotonic()
@@ -321,18 +357,19 @@ def train(train_data,
         for i, (doc, gold) in enumerate(train_data):
             if i % 100 == 99:
                 print(".", end="", flush=True)
-            loss += train_one_doc(model, doc, gold, optimizer)
+            loss += train_one_doc(model, doc, gold, optimizer, gpu)
 
         print("\n")
-
+        finish_iter_time = monotonic()
         train_acc = evaluate_accuracy(model, train_data)
         dev_acc = evaluate_accuracy(model, dev_data)
         # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
         print(
-            "iteration: {:>7,} time: {:>9,.3f}s loss: {:>12,.3f} train_acc: {:>8,.3f}% dev_acc: {:>8,.3f}%".format(
+            "iteration: {:>7,} train time: {:>9,.3f}s, eval time: {:>9,.3f}s loss: {:>12,.3f} train_acc: {:>8,.3f}% dev_acc: {:>8,.3f}%".format(
             # "iteration: {:>7,} time: {:>9,.3f}s loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
                 it,
-                monotonic() - start_time,
+                finish_iter_time - start_time,
+                monotonic() - finish_iter_time,
                 loss / len(train_data),
                 train_acc * 100,
                 dev_acc * 100
@@ -392,7 +429,11 @@ def main(args):
                                   mlp_hidden_dim,
                                   num_classes,
                                   embeddings,
-                                  reverse_vocab)
+                                  reverse_vocab,
+                                  args.gpu)
+
+    if args.gpu:
+        model.cuda()
 
     if args.input_model is None:
         model_save_dir = args.model_save_dir
@@ -406,7 +447,7 @@ def main(args):
               model,
               model_save_dir,
               num_iterations,
-              args.learning_rate)
+              args.learning_rate, args.gpu)
     else:
         state_dict = torch.load(args.input_model)
         model.load_state_dict(state_dict)
@@ -433,6 +474,7 @@ if __name__ == '__main__':
     parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
     parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
+    parser.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
     parser.add_argument("--input_model", help="Input model (to run test and not train)")
     parser.add_argument("--td", help="Train data file")
     parser.add_argument("--tl", help="Train labels file")
