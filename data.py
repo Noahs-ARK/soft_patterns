@@ -3,9 +3,10 @@ import string
 
 import numpy as np
 
+UNK_TOKEN="*UNK*"
 
-def read_embeddings(filename):
-    vocab = {"*UNK*":  0}
+def read_embeddings(filename, train_vocab=None):
+    vocab = {UNK_TOKEN:  0}
 
     vecs = []
     printable = set(string.printable)
@@ -24,7 +25,7 @@ def read_embeddings(filename):
             dim = len(e) - 1
             vecs.append(np.zeros(dim))
             e = first_line.rstrip().split(" ", 1)
-            add_vec(e, vecs, vocab)
+            add_vec(e, vecs, vocab, train_vocab)
 
         for line in input_file:
             e = line.rstrip().split(" ", 1)
@@ -44,7 +45,7 @@ def read_embeddings(filename):
                 # print(n,"is not good")
                 continue
 
-            add_vec(e, vecs, vocab)
+            add_vec(e, vecs, vocab, train_vocab)
 
     print("Done reading", len(vecs), "vectors of dimension", dim)
     reverse_vocab = {
@@ -53,8 +54,11 @@ def read_embeddings(filename):
     return vocab, reverse_vocab, vecs, dim
 
 
-def add_vec(v, vecs, vocab):
-    vocab[v[0]] = len(vocab)
+def add_vec(v, vecs, vocab, train_vocab=None):
+    w = v[0]
+    if train_vocab is not None and w not in train_vocab:
+        return
+    vocab[w] = len(vocab)
     vec = np.fromstring(v[1], dtype=float, sep=' ')
     vecs.append(vec / np.linalg.norm(vec))
 
@@ -68,3 +72,15 @@ def read_docs(filename, vocab):
 def read_labels(filename):
     with open(filename) as input_file:
         return [int(line.rstrip()) for line in input_file]
+
+
+def vocab_from_text(filename):
+    vocab = set()
+    with open(filename, encoding='utf-8') as input_file:
+        for line in input_file:
+            train_words = set(line.rstrip().split())
+
+            vocab |= train_words
+
+    print("Vocab from text", len(vocab))
+    return vocab

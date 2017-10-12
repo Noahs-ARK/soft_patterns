@@ -14,7 +14,7 @@ from torch.nn import Module, Parameter
 from torch.nn.functional import sigmoid, log_softmax, nll_loss
 from torch.optim import Adam
 
-from data import read_embeddings, read_docs, read_labels
+from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP
 
 # Running mode
@@ -28,13 +28,15 @@ def fixed_var(tensor, gpu=False):
 
 
 def argmax(output):
-    """ only works for 1xn tensors """
+    """ only works for kxn tensors """
     _, am = torch.max(output, 1)
-    return am[0]
+    return am
 
 
-def nearest_neighbor(w, embeddings, vocab):
-    return vocab[argmax(mm(w.view(1, w.size()[0]), embeddings))]
+def get_nearest_neighbors(w, embeddings):
+    dot_products = mm(w, embeddings.t())
+
+    return argmax(dot_products)
 
 
 def normalize(data):
@@ -84,65 +86,65 @@ class SoftPattern(Module):
         # self.final = fixed_var(zeros(pattern_length, 1))
         # self.final[-1, 0] = 1
 
-    def forward(self, doc):
-        """
-        Calculate score for one document.
-        doc -- a sequence of indices that correspond to the word embedding matrix
-        """
-        score = Variable(zeros(1))
-        hidden = self.start.clone()
-        z1 = Variable(zeros(1, 1))
-        # z2 = Variable(zeros(1, 2))
-        for word_index in doc:
-            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
-            result = self.transition_matrix(x)
-            # mul(hidden, self_loop_result) + \
-            # print("z1", z1.size(),
-            #       "hidden", hidden.size(),
-            #       "one_forward_result", one_forward_result.size(),
-            #       # hidden[:, :-1].size(), one_forward_result.size(),
-            #       "mul", mul(hidden[:, :-1], one_forward_result).size())
-            one_forward_result = result[self.pattern_length:2*self.pattern_length-1,:].t()
-            hidden = self.start + \
-                         cat((z1, mul(hidden[:, :-1], one_forward_result)), 1)
-                         # cat((z2, mul(hidden[:, :-2], two_forward_result)), 1)
-            score[0] = score[0] + hidden[0, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
-        return score[0]
+    # def forward(self, doc):
+    #     """
+    #     Calculate score for one document.
+    #     doc -- a sequence of indices that correspond to the word embedding matrix
+    #     """
+    #     score = Variable(zeros(1))
+    #     hidden = self.start.clone()
+    #     z1 = Variable(zeros(1, 1))
+    #     # z2 = Variable(zeros(1, 2))
+    #     for word_index in doc:
+    #         x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
+    #         result = self.transition_matrix(x)
+    #         # mul(hidden, self_loop_result) + \
+    #         # print("z1", z1.size(),
+    #         #       "hidden", hidden.size(),
+    #         #       "one_forward_result", one_forward_result.size(),
+    #         #       # hidden[:, :-1].size(), one_forward_result.size(),
+    #         #       "mul", mul(hidden[:, :-1], one_forward_result).size())
+    #         one_forward_result = result[self.pattern_length:2*self.pattern_length-1,:].t()
+    #         hidden = self.start + \
+    #                      cat((z1, mul(hidden[:, :-1], one_forward_result)), 1)
+    #                      # cat((z2, mul(hidden[:, :-2], two_forward_result)), 1)
+    #         score[0] = score[0] + hidden[0, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
+    #     return score[0]
 
     # FIXME: doesn't work with new vectorized transition matrices
-    def get_top_scoring_sequence(self, doc):
-        """
-        Get top scoring sequence in doc for this pattern (for intepretation purposes)
-        """
-        max_score = Variable(zeros(1))
-        max_start = -1
-        max_end = -1
-
-        for i in range(len(doc)-1):
-            word_index = doc[i]
-            x = self.embeddings[word_index, :]
-            score = Variable(zeros(1))
-            hidden = mm(self.start.clone(), self.transition_matrix(x))
-            score[0] = score[0] + mm(hidden, self.final)
-
-            if score[0].data[0] > max_score[0].data[0]:
-                max_score[0] = score[0]
-                max_start = i
-                max_end = i+1
-
-            for j in range(i+1, len(doc)):
-                word_index2 = doc[j]
-                y = self.embeddings[word_index2, :]
-                hidden = mm(hidden, self.transition_matrix(y))
-                score[0] = score[0] + mm(hidden, self.final)
-
-                if score[0].data[0] > max_score[0].data[0]:
-                    max_score[0] = score[0]
-                    max_start = i
-                    max_end = j+1
-
-        # print(max_score[0].data[0], max_start, max_end)
-        return max_score[0], max_start, max_end
+    # def get_top_scoring_sequence(self, doc):
+    #     """
+    #     Get top scoring sequence in doc for this pattern (for intepretation purposes)
+    #     """
+    #     max_score = Variable(zeros(1))
+    #     max_start = -1
+    #     max_end = -1
+    #
+    #     for i in range(len(doc)-1):
+    #         word_index = doc[i]
+    #         x = self.embeddings[word_index, :]
+    #         score = Variable(zeros(1))
+    #         hidden = mm(self.start.clone(), self.transition_matrix(x))
+    #         score[0] = score[0] + mm(hidden, self.final)
+    #
+    #         if score[0].data[0] > max_score[0].data[0]:
+    #             max_score[0] = score[0]
+    #             max_start = i
+    #             max_end = i+1
+    #
+    #         for j in range(i+1, len(doc)):
+    #             word_index2 = doc[j]
+    #             y = self.embeddings[word_index2, :]
+    #             hidden = mm(hidden, self.transition_matrix(y))
+    #             score[0] = score[0] + mm(hidden, self.final)
+    #
+    #             if score[0].data[0] > max_score[0].data[0]:
+    #                 max_score[0] = score[0]
+    #                 max_start = i
+    #                 max_end = j+1
+    #
+    #     # print(max_score[0].data[0], max_start, max_end)
+    #     return max_score[0], max_start, max_end
 
     def transition_matrix(self, word_vec):
         # result = Variable(zeros(self.pattern_length, self.pattern_length))
@@ -257,14 +259,15 @@ class SoftPatternClassifier(Module):
         #     for i in range(self.pattern_length-1):
         #         print("\tword",i,"norm",round(norms.data[p,i],3),"bias",round(viewed_biases.data[p,i],3))
 
-        # embeddings = self.embeddings.data  # torch.transpose(self.embeddings.data, 0, 1)
-        # neighbors = [
-        #     nearest_neighbor(self.w[i, i + 1].data, embeddings, self.vocab)
-        #     for i in range(self.pattern_length - 1)
-        # ]
-        # print("biases", biases, "norms", norms)
-        # print("neighbors", neighbors)
-        #
+        embeddings = self.embeddings.data  # torch.transpose(self.embeddings.data, 0, 1)
+
+        # print(viewed_tensor.size(), (self.num_patterns*(self.pattern_length-1), self.word_dim))
+        # reviewed_tensor = viewed_tensor.view(self.num_patterns*(self.pattern_length-1), self.word_dim)
+
+        nearest_neighbors = get_nearest_neighbors(self.diags.data, embeddings)
+
+        reviewed_nearest_neighbors = nearest_neighbors.view(self.num_patterns, self.num_diags, self.pattern_length)[:,1,:-1]
+
         if dev_set is not None:
             # print(dev_set[0])
             scores = self.get_top_scoring_sequences(dev_set)
@@ -276,23 +279,32 @@ class SoftPatternClassifier(Module):
                 sorted_keys = sorted(range(len(patt_scores)), key=lambda i: patt_scores[i][0].data[0])
                 # print(sorted_keys)
 
-                print("Top scoring", [(" ".join(dev_text[k][int(patt_scores[k][1].data[0]):int(patt_scores[k][2].data[0])]),
-                                       round(patt_scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]])
+                print("Top scoring",
+                      [(" ".join(dev_text[k][int(patt_scores[k][1].data[0]):int(patt_scores[k][2].data[0])]),
+                       round(patt_scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]],
+                      "first score", [round(patt_scores[k][3].data[0], 3) for k in sorted_keys[last_n:]],
+                      "norms", [round(x,3) for x in norms.data[p, :]],
+                      'biases', [round(x, 3) for x in viewed_biases.data[p,:]],
+                      'nearest neighbors', [self.vocab[x] for x in reviewed_nearest_neighbors[p, :]])
 
     def get_top_scoring_sequences(self, dev_set):
         """
         Get top scoring sequence in doc for this pattern (for intepretation purposes)
         """
-        max_scores = Variable(zeros(self.num_patterns, len(dev_set), 3))
+
+        n=4
+
+        max_scores = Variable(zeros(self.num_patterns, len(dev_set), n))
+        max_individual_scores = Variable(zeros(self.num_patterns, self.pattern_length, len(dev_set), n))
 
         z1 = fixed_var(zeros(self.num_patterns, 1), self.gpu)
 
         for d in range(len(dev_set)):
             if (d +1) % 10 == 0:
                 print(".", end="", flush=True)
-                # if (d + 1) % 100 == 0:
-                #     break
-                # break
+                if (d + 1) % 100 == 0:
+                    break
+
 
             doc = dev_set[d][0]
             # print(doc)
@@ -306,25 +318,32 @@ class SoftPatternClassifier(Module):
 
                 transition_matrices.append(self.transition_matrix(x))
 
-
-            for i in range(len(doc)):
+            # Todo: when we have self loops, uncomment the next line
+            #for i in range(len(doc)):
+            for i in range(len(doc) - self.pattern_length + 2):
                 hiddens = Variable(zeros(self.num_patterns, self.pattern_length).type(self.dtype))
 
                 # Start state
                 hiddens[:, 0] = 1
-                scores = Variable(zeros(self.num_patterns))
+                first_scores = Variable(zeros(self.num_patterns))
 
-                for j in range(i, len(doc)):
+                # Todo: when we have self loops, uncomment the next line
+                #for j in range(i, len(doc))):
+                for j in range(i, min(i+self.pattern_length-1, len(doc))):
                     # New value for hidden state
                     hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrices[j][:, 1, :-1])), 1)  # \
 
-                    scores = scores + hiddens[:, -1]
+                    scores = hiddens[:, -1]
+
+                    if i == j:
+                        first_scores = hiddens[:, 1]
 
                     for p in range(self.num_patterns):
                         if scores[p].data[0] > max_scores[p,d,0].data[0]:
                             max_scores[p,d,0] = scores[p]
                             max_scores[p,d,1] = i
                             max_scores[p,d,2]= j+1
+                            max_scores[p, d, 3] = first_scores[p]
 
         print()
         # print(max_score[0].data[0], max_start, max_end)
@@ -437,9 +456,6 @@ def train(train_data,
     for it in range(num_iterations):
         np.random.shuffle(train_data)
 
-        # for pattern in model.patterns:
-        #     pattern.visualize_pattern()
-
         loss = 0.0
         for i, (doc, gold) in enumerate(train_data):
             if i % 100 == 99:
@@ -477,8 +493,13 @@ def main(args):
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
 
+    if args.td is not None:
+        train_vocab = vocab_from_text(args.td)
+    else:
+        train_vocab = vocab_from_text(args.vd)
+
     vocab, reverse_vocab, embeddings, word_dim =\
-        read_embeddings(args.embedding_file)
+        read_embeddings(args.embedding_file, train_vocab)
 
     dev_input, dev_text = read_docs(args.vd, vocab)
     dev_labels = read_labels(args.vl)
