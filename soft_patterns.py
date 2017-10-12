@@ -165,39 +165,39 @@ class SoftPattern(Module):
 
         return result
 
-    # FIXME: doesn't work with new vectorized transition matrices
-    def visualize_pattern(self, dev_set = None, dev_text = None, n_top_scoring = 5):
-        # 1 above main diagonal
-        norms = [
-            norm(self.w[i, i + 1]).data[0]
-            for i in range(self.pattern_length - 1)
-        ]
-        biases = [
-            self.b[i, i + 1].data[0]
-            for i in range(self.pattern_length - 1)
-        ]
-        embeddings = self.embeddings.data  # torch.transpose(self.embeddings.data, 0, 1)
-        neighbors = [
-            nearest_neighbor(self.w[i, i + 1].data, embeddings, self.vocab)
-            for i in range(self.pattern_length - 1)
-        ]
-        print("biases", biases, "norms", norms)
-        print("neighbors", neighbors)
-
-        if dev_set is not None:
-            # print(dev_set[0])
-            scores = [
-                self.get_top_scoring_sequence(doc) for doc,_ in dev_set
-            ]
-
-            # print(scores[0][0])
-            last_n = len(scores)-n_top_scoring
-            sorted_keys = sorted(range(len(scores)), key=lambda i: scores[i][0].data[0])
-            # print(sorted_keys)
-
-
-            print("Top scoring", [(" ".join(dev_text[k][scores[k][1]:scores[k][2]]),
-                                   round(scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]])
+    # # FIXME: doesn't work with new vectorized transition matrices
+    # def visualize_pattern(self, dev_set = None, dev_text = None, n_top_scoring = 5):
+    #     # 1 above main diagonal
+    #     norms = [
+    #         norm(self.w[i, i + 1]).data[0]
+    #         for i in range(self.pattern_length - 1)
+    #     ]
+    #     biases = [
+    #         self.b[i, i + 1].data[0]
+    #         for i in range(self.pattern_length - 1)
+    #     ]
+    #     embeddings = self.embeddings.data  # torch.transpose(self.embeddings.data, 0, 1)
+    #     neighbors = [
+    #         nearest_neighbor(self.w[i, i + 1].data, embeddings, self.vocab)
+    #         for i in range(self.pattern_length - 1)
+    #     ]
+    #     print("biases", biases, "norms", norms)
+    #     print("neighbors", neighbors)
+    #
+    #     if dev_set is not None:
+    #         # print(dev_set[0])
+    #         scores = [
+    #             self.get_top_scoring_sequence(doc) for doc,_ in dev_set
+    #         ]
+    #
+    #         # print(scores[0][0])
+    #         last_n = len(scores)-n_top_scoring
+    #         sorted_keys = sorted(range(len(scores)), key=lambda i: scores[i][0].data[0])
+    #         # print(sorted_keys)
+    #
+    #
+    #         print("Top scoring", [(" ".join(dev_text[k][scores[k][1]:scores[k][2]]),
+    #                                round(scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]])
 
 
 class SoftPatternClassifier(Module):
@@ -244,6 +244,93 @@ class SoftPatternClassifier(Module):
 
         print ("# params:", sum(p.nelement() for p in self.parameters()))
 
+    def visualize_pattern(self, dev_set = None, dev_text = None, n_top_scoring = 5):
+        # 1 above main diagonal
+        viewed_tensor = self.diags.view(self.num_patterns, self.num_diags, self.pattern_length, self.word_dim)[:,1,:-1,:]
+
+        norms = norm(viewed_tensor, 2, 2)
+        viewed_biases = self.bias.view(self.num_patterns, self.num_diags, self.pattern_length)[:,1,:-1]
+
+        # print(norms.size(), viewed_biases.size())
+        # for p in range(self.num_patterns):
+        #     print("Pattern",p)
+        #     for i in range(self.pattern_length-1):
+        #         print("\tword",i,"norm",round(norms.data[p,i],3),"bias",round(viewed_biases.data[p,i],3))
+
+        # embeddings = self.embeddings.data  # torch.transpose(self.embeddings.data, 0, 1)
+        # neighbors = [
+        #     nearest_neighbor(self.w[i, i + 1].data, embeddings, self.vocab)
+        #     for i in range(self.pattern_length - 1)
+        # ]
+        # print("biases", biases, "norms", norms)
+        # print("neighbors", neighbors)
+        #
+        if dev_set is not None:
+            # print(dev_set[0])
+            scores = self.get_top_scoring_sequences(dev_set)
+
+            for p in range(self.num_patterns):
+                patt_scores = scores[p,:, :]
+                # print(scores[0][0])
+                last_n = len(patt_scores)-n_top_scoring
+                sorted_keys = sorted(range(len(patt_scores)), key=lambda i: patt_scores[i][0].data[0])
+                # print(sorted_keys)
+
+                print("Top scoring", [(" ".join(dev_text[k][int(patt_scores[k][1].data[0]):int(patt_scores[k][2].data[0])]),
+                                       round(patt_scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]])
+
+    def get_top_scoring_sequences(self, dev_set):
+        """
+        Get top scoring sequence in doc for this pattern (for intepretation purposes)
+        """
+        max_scores = Variable(zeros(self.num_patterns, len(dev_set), 3))
+
+        z1 = fixed_var(zeros(self.num_patterns, 1), self.gpu)
+
+        for d in range(len(dev_set)):
+            if (d +1) % 10 == 0:
+                print(".", end="", flush=True)
+                # if (d + 1) % 100 == 0:
+                #     break
+                # break
+
+            doc = dev_set[d][0]
+            # print(doc)
+
+            transition_matrices = []
+
+            for i in range(len(doc)):
+                word_index = doc[i]
+
+                x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
+
+                transition_matrices.append(self.transition_matrix(x))
+
+
+            for i in range(len(doc)):
+                hiddens = Variable(zeros(self.num_patterns, self.pattern_length).type(self.dtype))
+
+                # Start state
+                hiddens[:, 0] = 1
+                scores = Variable(zeros(self.num_patterns))
+
+                for j in range(i, len(doc)):
+                    # New value for hidden state
+                    hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrices[j][:, 1, :-1])), 1)  # \
+
+                    scores = scores + hiddens[:, -1]
+
+                    for p in range(self.num_patterns):
+                        if scores[p].data[0] > max_scores[p,d,0].data[0]:
+                            max_scores[p,d,0] = scores[p]
+                            max_scores[p,d,1] = i
+                            max_scores[p,d,2]= j+1
+
+        print()
+        # print(max_score[0].data[0], max_start, max_end)
+        return max_scores
+
+
     def forward(self, doc):
         """
         Calculate score for one document.
@@ -260,7 +347,7 @@ class SoftPatternClassifier(Module):
         # adding start for each word in the document.
 
         z1 = fixed_var(ones(self.num_patterns, 1), self.gpu)
-        z2 = fixed_var(zeros(self.num_patterns, 2), self.gpu)
+        # z2 = fixed_var(zeros(self.num_patterns, 2), self.gpu)
 
         for word_index in doc:
             # Cloning hidden (otherwise pytorch is unhappy)
@@ -274,11 +361,11 @@ class SoftPatternClassifier(Module):
                 x = x.cuda()
 
             # computing transition matrix for all pattern
-            result = self.transition_matrix(x)
+            transition_matrix_output = self.transition_matrix(x)
 
             # New value for hidden state
-            hiddens = cat((z1, mul(hiddens[:, :-1], result[:,1,:-1])), 1) \
-             + mul(hiddens, result[:,0,:])
+            hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrix_output[:,1,:-1])), 1)# \
+             # + mul(hiddens, result[:,0,:])
 #             + cat((z2, mul(hiddens[:, :-2], result[:,2,:-2])), 1) \
 
             # Score is the final column of hiddens
@@ -365,11 +452,11 @@ def train(train_data,
         dev_acc = evaluate_accuracy(model, dev_data)
         # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
         print(
-            "iteration: {:>7,} train time: {:>9,.3f}s, eval time: {:>9,.3f}s loss: {:>12,.3f} train_acc: {:>8,.3f}% dev_acc: {:>8,.3f}%".format(
+            "iteration: {:>7,} train time: {:>9,.3f}m, eval time: {:>9,.3f}m loss: {:>12,.3f} train_acc: {:>8,.3f}% dev_acc: {:>8,.3f}%".format(
             # "iteration: {:>7,} time: {:>9,.3f}s loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
                 it,
-                finish_iter_time - start_time,
-                monotonic() - finish_iter_time,
+                (finish_iter_time - start_time)/60,
+                (monotonic() - finish_iter_time)/60,
                 loss / len(train_data),
                 train_acc * 100,
                 dev_acc * 100
@@ -452,13 +539,14 @@ def main(args):
         state_dict = torch.load(args.input_model)
         model.load_state_dict(state_dict)
 
+        model.visualize_pattern(dev_data, dev_text)
         # for pattern in model.patterns:
         #     pattern.visualize_pattern(dev_data, dev_text)
 
-        dev_acc = evaluate_accuracy(model, dev_data)
+        # dev_acc = evaluate_accuracy(model, dev_data)
 
         # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
-        print("Dev acc:", dev_acc * 100)
+        # print("Dev acc:", dev_acc * 100)
 
     return 0
 
