@@ -34,7 +34,7 @@ def argmax(output):
 
 
 def get_nearest_neighbors(w, embeddings):
-    dot_products = mm(w, embeddings.t())
+    dot_products = mm(w, embeddings[:1000,:].t())
 
     return argmax(dot_products)
 
@@ -146,26 +146,26 @@ class SoftPattern(Module):
     #     # print(max_score[0].data[0], max_start, max_end)
     #     return max_score[0], max_start, max_end
 
-    def transition_matrix(self, word_vec):
-        # result = Variable(zeros(self.pattern_length, self.pattern_length))
-        # for i in range(self.pattern_length):
-        #     # only need to look at main diagonal and the two diagonals above it
-        #     for j in range(i, min(i + 2, self.pattern_length)):
-        #         result[i, j] = sigmoid(dot(self.w[i, j], word_vec) - log(norm(self.w[i, j])))
-        # for i in range(self.pattern_length - 1):
-        #     j = i + 1
-        #     result[i, j] = sigmoid(dot(self.w[i, j], word_vec) + self.b[i, j])
-        # self_loop_result = sigmoid(mm(word_vec, self.self_loop) + self.self_loop_bias)
-        # print(self.one_forward.size(), word_vec.size(), self.one_forward_bias.size())
-        # print(mm(word_vec.view(1, word_vec.size()[0]), self.one_forward).size())
-        # one_forward_result = sigmoid(mm(word_vec, self.one_forward) + self.one_forward_bias)
-        # two_forward_result = sigmoid(mm(word_vec, self.two_forward) + self.two_forward_bias)
-
-        # print("wv size:",word_vec.size(), "diag size:",self.diags.size(), "bias size: ",self.bias.size())
-
-        result = sigmoid(mm(self.diags, word_vec) + self.bias)
-
-        return result
+    # def transition_matrix(self, word_vec):
+    #     # result = Variable(zeros(self.pattern_length, self.pattern_length))
+    #     # for i in range(self.pattern_length):
+    #     #     # only need to look at main diagonal and the two diagonals above it
+    #     #     for j in range(i, min(i + 2, self.pattern_length)):
+    #     #         result[i, j] = sigmoid(dot(self.w[i, j], word_vec) - log(norm(self.w[i, j])))
+    #     # for i in range(self.pattern_length - 1):
+    #     #     j = i + 1
+    #     #     result[i, j] = sigmoid(dot(self.w[i, j], word_vec) + self.b[i, j])
+    #     # self_loop_result = sigmoid(mm(word_vec, self.self_loop) + self.self_loop_bias)
+    #     # print(self.one_forward.size(), word_vec.size(), self.one_forward_bias.size())
+    #     # print(mm(word_vec.view(1, word_vec.size()[0]), self.one_forward).size())
+    #     # one_forward_result = sigmoid(mm(word_vec, self.one_forward) + self.one_forward_bias)
+    #     # two_forward_result = sigmoid(mm(word_vec, self.two_forward) + self.two_forward_bias)
+    #
+    #     # print("wv size:",word_vec.size(), "diag size:",self.diags.size(), "bias size: ",self.bias.size())
+    #
+    #     result = sigmoid(mm(self.diags, word_vec) + self.bias)
+    #
+    #     return result
 
     # # FIXME: doesn't work with new vectorized transition matrices
     # def visualize_pattern(self, dev_set = None, dev_text = None, n_top_scoring = 5):
@@ -215,8 +215,7 @@ class SoftPatternClassifier(Module):
                  num_classes,
                  embeddings,
                  vocab,
-                 gpu=False,
-                 num_diags = 3):
+                 gpu=False):
         super(SoftPatternClassifier, self).__init__()
         self.vocab = vocab
         self.embeddings = fixed_var(FloatTensor(embeddings), gpu)
@@ -231,13 +230,19 @@ class SoftPatternClassifier(Module):
         self.mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
 
         self.word_dim = len(embeddings[0])
-        self.num_diags = num_diags
+        self.num_diags = 2
         self.pattern_length = pattern_length
         diag_data = randn(num_patterns*self.num_diags*pattern_length, self.word_dim).type(self.dtype)
         normalize(diag_data)
         self.num_patterns = num_patterns
         self.diags = Parameter(diag_data)
         self.bias = Parameter(randn(num_patterns*self.num_diags*pattern_length,1).type(self.dtype))
+
+        self.epsilon = Parameter(randn(num_patterns,(pattern_length-1)).type(self.dtype))
+
+        self.epsilon_scale = Parameter(randn(1).type(self.dtype))
+        self.self_loop_scale = Parameter(randn(1).type(self.dtype))
+
 #        self.start = fixed_var(zeros(1, pattern_length))
 #        self.start[0, 0] = 1
         # end state distribution (always end in last state)
@@ -364,9 +369,12 @@ class SoftPatternClassifier(Module):
         hiddens[:,0] = 1
 
         # adding start for each word in the document.
+        restart_padding = fixed_var(ones(self.num_patterns, 1), self.gpu)
 
-        z1 = fixed_var(ones(self.num_patterns, 1), self.gpu)
-        # z2 = fixed_var(zeros(self.num_patterns, 2), self.gpu)
+        zero_padding = fixed_var(zeros(self.num_patterns, 1), self.gpu)
+
+        eps_value = torch.mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
+        self_loop_scale = sigmoid(self.self_loop_scale)
 
         for word_index in doc:
             # Cloning hidden (otherwise pytorch is unhappy)
@@ -383,8 +391,13 @@ class SoftPatternClassifier(Module):
             transition_matrix_output = self.transition_matrix(x)
 
             # New value for hidden state
-            hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrix_output[:,1,:-1])), 1)# \
-             # + mul(hiddens, result[:,0,:])
+            hiddens = cat((restart_padding, mul(hiddens[:, :-1], transition_matrix_output[:,1,:-1])), 1) \
+                        + torch.mul(self_loop_scale, mul(hiddens, transition_matrix_output[:, 0, :])) # Adding the main diagonal (self loops)
+
+            # Adding epsilon transitions (skipping words)
+            # print("Sizes:",hiddens[:, :-1].size(), eps_value.size())
+            hiddens = hiddens + cat((zero_padding, mul(hiddens[:, :-1], eps_value)), 1)
+
 #             + cat((z2, mul(hiddens[:, :-2], result[:,2,:-2])), 1) \
 
             # Score is the final column of hiddens
@@ -405,15 +418,9 @@ class SoftPatternClassifier(Module):
 
         return result
 
-    def get_subset(self, pattern_index, diag_index):
-        large_n = self.num_diags * self.pattern_length
-        start = (pattern_index - 1) * large_n + diag_index*self.pattern_length
-        end = (pattern_index - 1) * large_n + (diag_index+1)*self.pattern_length - diag_index
-        return start, end
-
     def predict(self, doc):
         output = self.forward(doc).data
-        return int(argmax(output))
+        return int(argmax(output)[0])
 
 
 def train_one_doc(model, doc, gold_output, optimizer, gpu=False):
@@ -493,13 +500,17 @@ def main(args):
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
 
+    if args.seed != -1:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+
+    dev_vocab = vocab_from_text(args.vd)
     if args.td is not None:
         train_vocab = vocab_from_text(args.td)
-    else:
-        train_vocab = vocab_from_text(args.vd)
+        dev_vocab |= train_vocab
 
     vocab, reverse_vocab, embeddings, word_dim =\
-        read_embeddings(args.embedding_file, train_vocab)
+        read_embeddings(args.embedding_file, dev_vocab)
 
     dev_input, dev_text = read_docs(args.vd, vocab)
     dev_labels = read_labels(args.vl)
