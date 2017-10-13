@@ -17,6 +17,7 @@ from torch.optim import Adam
 from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP
 
+
 # Running mode
 
 
@@ -34,7 +35,7 @@ def argmax(output):
 
 
 def get_nearest_neighbors(w, embeddings):
-    dot_products = mm(w, embeddings[:1000,:].t())
+    dot_products = mm(w, embeddings[:1000, :].t())
 
     return argmax(dot_products)
 
@@ -75,31 +76,34 @@ class SoftPatternClassifier(Module):
         self.word_dim = len(embeddings[0])
         self.num_diags = 2
         self.pattern_length = pattern_length
-        diag_data = randn(num_patterns*self.num_diags*pattern_length, self.word_dim).type(self.dtype)
+        diag_data = randn(num_patterns * self.num_diags * pattern_length, self.word_dim).type(self.dtype)
         normalize(diag_data)
         self.num_patterns = num_patterns
         self.diags = Parameter(diag_data)
-        self.bias = Parameter(randn(num_patterns*self.num_diags*pattern_length,1).type(self.dtype))
+        self.bias = Parameter(randn(num_patterns * self.num_diags * pattern_length, 1).type(self.dtype))
 
-        self.epsilon = Parameter(randn(num_patterns,(pattern_length-1)).type(self.dtype))
+        self.epsilon = Parameter(randn(num_patterns, (pattern_length - 1)).type(self.dtype))
 
-        self.epsilon_scale = Parameter(randn(1).type(self.dtype))
-        self.self_loop_scale = Parameter(randn(1).type(self.dtype))
+        # self.epsilon_scale = Parameter(randn(1).type(self.dtype))
+        # self.self_loop_scale = Parameter(randn(1).type(self.dtype))
+        self.epsilon_scale = fixed_var(FloatTensor([.5]).type(self.dtype))
+        self.self_loop_scale = fixed_var(FloatTensor([.5]).type(self.dtype))
 
-#        self.start = fixed_var(zeros(1, pattern_length))
-#        self.start[0, 0] = 1
+        #        self.start = fixed_var(zeros(1, pattern_length))
+        #        self.start[0, 0] = 1
         # end state distribution (always end in last state)
-#        self.final = fixed_var(zeros(pattern_length, 1))
-#        self.final[-1, 0] = 1
+        #        self.final = fixed_var(zeros(pattern_length, 1))
+        #        self.final[-1, 0] = 1
 
-        print ("# params:", sum(p.nelement() for p in self.parameters()))
+        print("# params:", sum(p.nelement() for p in self.parameters()))
 
-    def visualize_pattern(self, dev_set = None, dev_text = None, n_top_scoring = 5):
+    def visualize_pattern(self, dev_set=None, dev_text=None, n_top_scoring=5):
         # 1 above main diagonal
-        viewed_tensor = self.diags.view(self.num_patterns, self.num_diags, self.pattern_length, self.word_dim)[:,1,:-1,:]
+        viewed_tensor = self.diags.view(self.num_patterns, self.num_diags, self.pattern_length, self.word_dim)[:, 1,
+                        :-1, :]
 
         norms = norm(viewed_tensor, 2, 2)
-        viewed_biases = self.bias.view(self.num_patterns, self.num_diags, self.pattern_length)[:,1,:-1]
+        viewed_biases = self.bias.view(self.num_patterns, self.num_diags, self.pattern_length)[:, 1, :-1]
 
         # print(norms.size(), viewed_biases.size())
         # for p in range(self.num_patterns):
@@ -114,25 +118,26 @@ class SoftPatternClassifier(Module):
 
         nearest_neighbors = get_nearest_neighbors(self.diags.data, embeddings)
 
-        reviewed_nearest_neighbors = nearest_neighbors.view(self.num_patterns, self.num_diags, self.pattern_length)[:,1,:-1]
+        reviewed_nearest_neighbors = nearest_neighbors.view(self.num_patterns, self.num_diags, self.pattern_length)[:,
+                                     1, :-1]
 
         if dev_set is not None:
             # print(dev_set[0])
             scores = self.get_top_scoring_sequences(dev_set)
 
             for p in range(self.num_patterns):
-                patt_scores = scores[p,:, :]
+                patt_scores = scores[p, :, :]
                 # print(scores[0][0])
-                last_n = len(patt_scores)-n_top_scoring
+                last_n = len(patt_scores) - n_top_scoring
                 sorted_keys = sorted(range(len(patt_scores)), key=lambda i: patt_scores[i][0].data[0])
                 # print(sorted_keys)
 
                 print("Top scoring",
                       [(" ".join(dev_text[k][int(patt_scores[k][1].data[0]):int(patt_scores[k][2].data[0])]),
-                       round(patt_scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]],
-                      "first score", [round(patt_scores[k][3].data[0], 3) for k in sorted_keys[last_n:]],
-                      "norms", [round(x,3) for x in norms.data[p, :]],
-                      'biases', [round(x, 3) for x in viewed_biases.data[p,:]],
+                        round(patt_scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]],
+                      # "first score", [round(patt_scores[k][3].data[0], 3) for k in sorted_keys[last_n:]],
+                      "norms", [round(x, 3) for x in norms.data[p, :]],
+                      'biases', [round(x, 3) for x in viewed_biases.data[p, :]],
                       'nearest neighbors', [self.vocab[x] for x in reviewed_nearest_neighbors[p, :]])
 
     def get_top_scoring_sequences(self, dev_set):
@@ -140,63 +145,73 @@ class SoftPatternClassifier(Module):
         Get top scoring sequence in doc for this pattern (for intepretation purposes)
         """
 
-        n=4
+        n = 3  # max_score, start_idx, end_idx
 
         max_scores = Variable(zeros(self.num_patterns, len(dev_set), n))
-        max_individual_scores = Variable(zeros(self.num_patterns, self.pattern_length, len(dev_set), n))
 
-        z1 = fixed_var(zeros(self.num_patterns, 1), self.gpu)
+        zero_padding = fixed_var(zeros(self.num_patterns, 1), self.gpu)
+        eps_value = self.get_eps_value()
+        self_loop_scale = self.get_self_loop_scale()
 
         for d in range(len(dev_set)):
-            if (d +1) % 10 == 0:
+            if (d + 1) % 10 == 0:
                 print(".", end="", flush=True)
-                if (d + 1) % 100 == 0:
-                    break
-
+                # if (d + 1) % 100 == 0:
+                #     break  # only visualize first 100 docs
 
             doc = dev_set[d][0]
-            # print(doc)
 
-            transition_matrices = []
+            transition_matrices = self.get_transition_matrices(doc)
 
+            # Todo: to ignore self loops, uncomment the next line
+            # for i in range(len(doc) - self.pattern_length + 2):
             for i in range(len(doc)):
-                word_index = doc[i]
-
-                x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
-
-                transition_matrices.append(self.transition_matrix(x))
-
-            # Todo: when we have self loops, uncomment the next line
-            #for i in range(len(doc)):
-            for i in range(len(doc) - self.pattern_length + 2):
                 hiddens = Variable(zeros(self.num_patterns, self.pattern_length).type(self.dtype))
 
                 # Start state
                 hiddens[:, 0] = 1
-                first_scores = Variable(zeros(self.num_patterns))
+                # first_scores = Variable(zeros(self.num_patterns))
 
                 # Todo: when we have self loops, uncomment the next line
-                #for j in range(i, len(doc))):
-                for j in range(i, min(i+self.pattern_length-1, len(doc))):
+                # for j in range(i, len(doc))):
+                for j in range(i, min(i + self.pattern_length - 1, len(doc))):
+                    transition_matrix_val = transition_matrices[j]
+                    hiddens = self.transition_once(
+                        eps_value,
+                        hiddens,
+                        self_loop_scale,
+                        transition_matrix_val,
+                        zero_padding,
+                        zero_padding)
+
                     # New value for hidden state
-                    hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrices[j][:, 1, :-1])), 1)  # \
+                    # hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrices[j][:, 1, :-1])), 1)  # \
 
                     scores = hiddens[:, -1]
 
-                    if i == j:
-                        first_scores = hiddens[:, 1]
+                    # if i == j:
+                    #     first_scores = hiddens[:, 1]
 
                     for p in range(self.num_patterns):
-                        if scores[p].data[0] > max_scores[p,d,0].data[0]:
-                            max_scores[p,d,0] = scores[p]
-                            max_scores[p,d,1] = i
-                            max_scores[p,d,2]= j+1
-                            max_scores[p, d, 3] = first_scores[p]
+                        if scores[p].data[0] > max_scores[p, d, 0].data[0]:
+                            max_scores[p, d, 0] = scores[p]
+                            max_scores[p, d, 1] = i
+                            max_scores[p, d, 2] = j + 1
+                            # max_scores[p, d, 3] = first_scores[p]
 
         print()
         # print(max_score[0].data[0], max_start, max_end)
         return max_scores
 
+    def get_transition_matrices(self, doc):
+        # transition matrix for each token in doc
+        transition_matrices = []
+        for i in range(len(doc)):
+            word_index = doc[i]
+            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
+            transition_matrices.append(self.transition_matrix(x))
+
+        return transition_matrices
 
     def forward(self, doc):
         """
@@ -205,51 +220,53 @@ class SoftPatternClassifier(Module):
         """
         scores = Variable(zeros(self.num_patterns).type(self.dtype))
 
-        #hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
+        # hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
         hiddens = Variable(zeros(self.num_patterns, self.pattern_length).type(self.dtype))
 
         # Start state
-        hiddens[:,0] = 1
+        hiddens[:, 0] = 1
 
         # adding start for each word in the document.
         restart_padding = fixed_var(ones(self.num_patterns, 1), self.gpu)
 
         zero_padding = fixed_var(zeros(self.num_patterns, 1), self.gpu)
 
-        eps_value = torch.mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
-        self_loop_scale = sigmoid(self.self_loop_scale)
+        eps_value = self.get_eps_value()
+        self_loop_scale = self.get_self_loop_scale()
 
-        for word_index in doc:
-            # Cloning hidden (otherwise pytorch is unhappy)
-            #h_clone=hiddens.clone()
-            #h_clone = hiddens
+        transition_matrices = self.get_transition_matrices(doc)
 
-            # reshaping word embeddings
-            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
+        for transition_matrix_val in transition_matrices:
 
-            if self.gpu:
-                x = x.cuda()
-
-            # computing transition matrix for all pattern
-            transition_matrix_output = self.transition_matrix(x)
-
-            # New value for hidden state
-            hiddens = cat((restart_padding, mul(hiddens[:, :-1], transition_matrix_output[:,1,:-1])), 1) \
-                        + torch.mul(self_loop_scale, mul(hiddens, transition_matrix_output[:, 0, :])) # Adding the main diagonal (self loops)
-
-            # Adding epsilon transitions (skipping words)
-            # print("Sizes:",hiddens[:, :-1].size(), eps_value.size())
-            hiddens = hiddens + cat((zero_padding, mul(hiddens[:, :-1], eps_value)), 1)
-
-#             + cat((z2, mul(hiddens[:, :-2], result[:,2,:-2])), 1) \
-
+            hiddens = self.transition_once(eps_value,
+                                           hiddens,
+                                           self_loop_scale,
+                                           transition_matrix_val,
+                                           zero_padding,
+                                           restart_padding)
             # Score is the final column of hiddens
             scores = scores + hiddens[:, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
 
         return self.mlp.forward(stack(scores).t())
 
-            # scores = stack([p.forward(doc) for p in self.patterns])
+        # scores = stack([p.forward(doc) for p in self.patterns])
         # return self.mlp.forward(scores.t())
+
+    def get_self_loop_scale(self):
+        return sigmoid(self.self_loop_scale)
+
+    def get_eps_value(self):
+        return torch.mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
+
+    def transition_once(self, eps_value, hiddens, self_loop_scale, transition_matrix_val, zero_padding, restart_padding):
+        # New value for hidden state
+        hiddens = cat((zero_padding, mul(hiddens[:, :-1], transition_matrix_val[:, 1, :-1])), 1) \
+                  + torch.mul(self_loop_scale,
+                              mul(hiddens, transition_matrix_val[:, 0, :]))  # Adding the main diagonal (self loops)
+        # Adding epsilon transitions (skipping words)
+        # print("Sizes:",hiddens[:, :-1].size(), eps_value.size())
+        hiddens = hiddens + cat((restart_padding, mul(hiddens[:, :-1], eps_value)), 1)
+        return hiddens
 
     def transition_matrix(self, word_vec):
         result = sigmoid(mm(self.diags, word_vec) + self.bias).t().view(
@@ -319,10 +336,10 @@ def train(train_data,
         # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
         print(
             "iteration: {:>7,} train time: {:>9,.3f}m, eval time: {:>9,.3f}m loss: {:>12,.3f} train_acc: {:>8,.3f}% dev_acc: {:>8,.3f}%".format(
-            # "iteration: {:>7,} time: {:>9,.3f}s loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
+                # "iteration: {:>7,} time: {:>9,.3f}s loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
                 it,
-                (finish_iter_time - start_time)/60,
-                (monotonic() - finish_iter_time)/60,
+                (finish_iter_time - start_time) / 60,
+                (monotonic() - finish_iter_time) / 60,
                 loss / len(train_data),
                 train_acc * 100,
                 dev_acc * 100
@@ -352,7 +369,7 @@ def main(args):
         train_vocab = vocab_from_text(args.td)
         dev_vocab |= train_vocab
 
-    vocab, reverse_vocab, embeddings, word_dim =\
+    vocab, reverse_vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
     dev_input, dev_text = read_docs(args.vd, vocab)
