@@ -13,6 +13,8 @@ from torch.functional import stack
 from torch.nn import Module, Parameter
 from torch.nn.functional import sigmoid, log_softmax, nll_loss
 from torch.optim import Adam
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 
 from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP
@@ -56,6 +58,7 @@ class SoftPatternClassifier(Module):
                  num_patterns,
                  pattern_length,
                  mlp_hidden_dim,
+                 num_mlp_layers,
                  num_classes,
                  embeddings,
                  vocab,
@@ -71,7 +74,7 @@ class SoftPatternClassifier(Module):
 
         self.gpu = gpu
         # self.patterns = torch.nn.ModuleList([SoftPattern(pattern_length, self.embeddings, vocab) for _ in range(num_patterns)])
-        self.mlp = MLP(num_patterns, mlp_hidden_dim, num_classes)
+        self.mlp = MLP(num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes)
 
         self.word_dim = len(embeddings[0])
         self.num_diags = 2
@@ -314,10 +317,16 @@ def train(train_data,
           model,
           model_save_dir,
           num_iterations,
+          model_file_prefix,
           learning_rate,
+          run_scheduler=False,
           gpu=False):
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
+
+    if run_scheduler:
+        scheduler = ReduceLROnPlateau(optimizer, 'min', 0.1, 10, True)
+
     start_time = monotonic()
 
     for it in range(num_iterations):
@@ -346,8 +355,11 @@ def train(train_data,
             )
         )
 
+        if run_scheduler:
+            scheduler.step(loss)
+
         if model_save_dir is not None:
-            model_save_file = os.path.join(model_save_dir, "model_{}.pth".format(it))
+            model_save_file = os.path.join(model_save_dir, "{}_{}.pth".format(model_file_prefix, it))
             torch.save(model.state_dict(), model_save_file)
 
     return model
@@ -359,6 +371,7 @@ def main(args):
     num_patterns = args.num_patterns
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
+    num_mlp_layers = args.num_mlp_layers
 
     if args.seed != -1:
         torch.manual_seed(args.seed)
@@ -376,12 +389,13 @@ def main(args):
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
 
-    if args.input_model is None:
-        np.random.shuffle(dev_data)
-        num_iterations = args.num_iterations
-        if args.td is None or args.tl is None:
+    if args.td is not None:
+        if args.tl is None:
             print("Both training data (--td) and training labels (--tl) required in training mode")
             return -1
+
+        np.random.shuffle(dev_data)
+        num_iterations = args.num_iterations
 
         train_input, _ = read_docs(args.td, vocab)
         train_labels = read_labels(args.tl)
@@ -399,13 +413,13 @@ def main(args):
     print("num_classes:", num_classes)
 
     if n is not None:
-        if args.input_model is None:
-            train_data = train_data[:n]
+        train_data = train_data[:n]
         dev_data = dev_data[:n]
 
     model = SoftPatternClassifier(num_patterns,
                                   pattern_length,
                                   mlp_hidden_dim,
+                                  num_mlp_layers,
                                   num_classes,
                                   embeddings,
                                   reverse_vocab,
@@ -414,23 +428,31 @@ def main(args):
     if args.gpu:
         model.cuda()
 
-    if args.input_model is None:
+    model_file_prefix = 'model'
+    # Loading model
+    if args.input_model is not None:
+        state_dict = torch.load(args.input_model)
+        model.load_state_dict(state_dict)
+        model_file_prefix = 'model_retrained'
+
+    if args.td:
         model_save_dir = args.model_save_dir
 
         if model_save_dir is not None:
             if not os.path.exists(model_save_dir):
                 os.makedirs(model_save_dir)
 
+        print("Training with", model_file_prefix)
         train(train_data,
               dev_data,
               model,
               model_save_dir,
               num_iterations,
-              args.learning_rate, args.gpu)
+              model_file_prefix,
+              args.learning_rate,
+              args.scheduler,
+              args.gpu)
     else:
-        state_dict = torch.load(args.input_model)
-        model.load_state_dict(state_dict)
-
         model.visualize_pattern(dev_data, dev_text)
         # for pattern in model.patterns:
         #     pattern.visualize_pattern(dev_data, dev_text)
@@ -452,8 +474,10 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--pattern_length", help="Length of pattern", type=int, default=2)
     parser.add_argument("-k", "--num_patterns", help="Number of patterns", type=int, default=2)
     parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
+    parser.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
     parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
+    parser.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
     parser.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
     parser.add_argument("--input_model", help="Input model (to run test and not train)")
     parser.add_argument("--td", help="Train data file")
