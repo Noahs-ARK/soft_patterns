@@ -286,17 +286,20 @@ class SoftPatternClassifier(Module):
         return int(argmax(output)[0])
 
 
-def train_one_doc(model, doc, gold_output, optimizer, gpu=False):
+def train_one_doc(model, doc, num_classes, gold_output, optimizer, gpu=False):
     """Train on one doc. """
     optimizer.zero_grad()
-    output = model.forward(doc)
-    loss = nll_loss(
-        log_softmax(output).view(1, 2),
-        fixed_var(LongTensor([gold_output]), gpu)
-    )
+    loss = compute_loss(model, doc, num_classes, gold_output, gpu)
     loss.backward()
     optimizer.step()
     return loss.data[0]
+
+def compute_loss(model, doc, num_classes, gold_output, gpu):
+    output = model.forward(doc)
+    return nll_loss(
+        log_softmax(output).view(1, num_classes),
+        fixed_var(LongTensor([gold_output]), gpu)
+    )
 
 
 def evaluate_accuracy(model, data):
@@ -315,6 +318,7 @@ def evaluate_accuracy(model, data):
 def train(train_data,
           dev_data,
           model,
+          num_classes,
           model_save_dir,
           num_iterations,
           model_file_prefix,
@@ -336,27 +340,37 @@ def train(train_data,
         for i, (doc, gold) in enumerate(train_data):
             if i % 100 == 99:
                 print(".", end="", flush=True)
-            loss += train_one_doc(model, doc, gold, optimizer, gpu)
+            loss += train_one_doc(model, doc, num_classes, gold, optimizer, gpu)
+
+        dev_loss = 0.0
+        for i, (doc, gold) in enumerate(dev_data):
+            if i % 100 == 99:
+                print(".", end="", flush=True)
+            dev_loss += compute_loss(model, doc, num_classes, gold, gpu).data[0]
 
         print("\n")
         finish_iter_time = monotonic()
         train_acc = evaluate_accuracy(model, train_data)
         dev_acc = evaluate_accuracy(model, dev_data)
+
         # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
         print(
-            "iteration: {:>7,} train time: {:>9,.3f}m, eval time: {:>9,.3f}m loss: {:>12,.3f} train_acc: {:>8,.3f}% dev_acc: {:>8,.3f}%".format(
+            "iteration: {:>7,} train time: {:>9,.3f}m, eval time: {:>9,.3f}m "\
+                "train loss: {:>12,.3f} train_acc: {:>8,.3f}% " \
+                "dev loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
                 # "iteration: {:>7,} time: {:>9,.3f}s loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
                 it,
                 (finish_iter_time - start_time) / 60,
                 (monotonic() - finish_iter_time) / 60,
                 loss / len(train_data),
                 train_acc * 100,
+                dev_loss / len(dev_data),
                 dev_acc * 100
             )
         )
 
         if run_scheduler:
-            scheduler.step(loss)
+            scheduler.step(dev_loss)
 
         if model_save_dir is not None:
             model_save_file = os.path.join(model_save_dir, "{}_{}.pth".format(model_file_prefix, it))
@@ -446,6 +460,7 @@ def main(args):
         train(train_data,
               dev_data,
               model,
+              num_classes,
               model_save_dir,
               num_iterations,
               model_file_prefix,
