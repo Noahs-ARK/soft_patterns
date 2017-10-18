@@ -48,6 +48,6 @@ class MLP(Module):
         else:
             res = self.layers[0](x)
 
-            for i in range(len(self.layers)-1):
-                res = self.layers[i].relu(res)
+            for i in range(1, len(self.layers)):
+                res = self.layers[i](relu(res))
             return res
