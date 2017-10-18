@@ -442,6 +442,8 @@ def main(args):
         train_data = train_data[:n]
         dev_data = dev_data[:n]
 
+    dropout = None if args.td is None else args.dropout
+
     model = SoftPatternClassifier(num_patterns,
                                   pattern_length,
                                   mlp_hidden_dim,
@@ -450,7 +452,7 @@ def main(args):
                                   embeddings,
                                   reverse_vocab,
                                   args.gpu,
-                                  args.dropout,
+                                  dropout,
                                   args.legacy)
 
     if args.gpu:

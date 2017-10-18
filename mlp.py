@@ -15,6 +15,7 @@ class MLP(Module):
         super(MLP, self).__init__()
 
         self.num_layers = num_layers
+        self.legacy = legacy
 
         if dropout:
             dropout_layer = nn.Dropout(p=dropout)
@@ -42,7 +43,7 @@ class MLP(Module):
 
 
     def forward(self, x):
-        if self.num_layers == 2:
+        if self.legacy and self.num_layers == 2:
             return self.layer2(relu(self.layer1(x)))
         else:
             res = self.layers[0](x)
