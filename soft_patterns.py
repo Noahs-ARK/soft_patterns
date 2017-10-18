@@ -88,11 +88,9 @@ class SoftPatternClassifier(Module):
         bias_data = randn(num_patterns * self.num_diags * pattern_length, 1).type(self.dtype)
         epsilon_data = randn(num_patterns, (pattern_length - 1)).type(self.dtype)
 
+        self.dropout = None
         if dropout:
-            m = nn.Dropout(p=dropout)
-            diag_data = m(Variable(diag_data))
-            bias_data = m(bias_data)
-            epsilon_data = m(epsilon_data)
+            self.dropout = torch.nn.Dropout(dropout)
 
         self.diags = Parameter(diag_data)
         self.bias = Parameter(bias_data)
@@ -223,6 +221,7 @@ class SoftPatternClassifier(Module):
         for i in range(len(doc)):
             word_index = doc[i]
             x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
+
             transition_matrices.append(self.transition_matrix(x))
 
         return transition_matrices
@@ -288,6 +287,9 @@ class SoftPatternClassifier(Module):
 
         if self.gpu:
             result = result.cuda()
+
+        if self.dropout:
+            result = self.dropout(result)
 
         return result
 

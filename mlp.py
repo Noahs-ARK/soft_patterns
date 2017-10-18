@@ -1,3 +1,4 @@
+from torch import nn
 from torch.nn import Linear, Module,ModuleList
 from torch.nn.functional import relu
 
@@ -27,8 +28,8 @@ class MLP(Module):
 
             layer = Linear(d1, d2)
 
-            if dropout:
-                layer = dropout_layer(layer)
+            # if dropout:
+            #     layer = dropout_layer(layer)
 
             layers.append(layer)
 
