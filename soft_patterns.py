@@ -62,7 +62,9 @@ class SoftPatternClassifier(Module):
                  num_classes,
                  embeddings,
                  vocab,
-                 gpu=False):
+                 gpu=False,
+                 dropout=0,
+                 legacy=False):
         super(SoftPatternClassifier, self).__init__()
         self.vocab = vocab
         self.embeddings = fixed_var(FloatTensor(embeddings), gpu)
@@ -74,7 +76,7 @@ class SoftPatternClassifier(Module):
 
         self.gpu = gpu
         # self.patterns = torch.nn.ModuleList([SoftPattern(pattern_length, self.embeddings, vocab) for _ in range(num_patterns)])
-        self.mlp = MLP(num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes)
+        self.mlp = MLP(num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes, dropout, legacy)
 
         self.word_dim = len(embeddings[0])
         self.num_diags = 2
@@ -82,10 +84,19 @@ class SoftPatternClassifier(Module):
         diag_data = randn(num_patterns * self.num_diags * pattern_length, self.word_dim).type(self.dtype)
         normalize(diag_data)
         self.num_patterns = num_patterns
-        self.diags = Parameter(diag_data)
-        self.bias = Parameter(randn(num_patterns * self.num_diags * pattern_length, 1).type(self.dtype))
 
-        self.epsilon = Parameter(randn(num_patterns, (pattern_length - 1)).type(self.dtype))
+        bias_data = randn(num_patterns * self.num_diags * pattern_length, 1).type(self.dtype)
+        epsilon_data = randn(num_patterns, (pattern_length - 1)).type(self.dtype)
+
+        if dropout:
+            m = nn.Dropout(p=dropout)
+            diag_data = m(Variable(diag_data))
+            bias_data = m(bias_data)
+            epsilon_data = m(epsilon_data)
+
+        self.diags = Parameter(diag_data)
+        self.bias = Parameter(bias_data)
+        self.epsilon = Parameter(epsilon_data)
 
         # self.epsilon_scale = Parameter(randn(1).type(self.dtype))
         # self.self_loop_scale = Parameter(randn(1).type(self.dtype))
@@ -240,7 +251,6 @@ class SoftPatternClassifier(Module):
         transition_matrices = self.get_transition_matrices(doc)
 
         for transition_matrix_val in transition_matrices:
-
             hiddens = self.transition_once(eps_value,
                                            hiddens,
                                            self_loop_scale,
@@ -437,7 +447,9 @@ def main(args):
                                   num_classes,
                                   embeddings,
                                   reverse_vocab,
-                                  args.gpu)
+                                  args.gpu,
+                                  args.dropout,
+                                  args.legacy)
 
     if args.gpu:
         model.cuda()
@@ -494,6 +506,8 @@ if __name__ == '__main__':
     parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
     parser.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
     parser.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
+    parser.add_argument("-c", "--legacy", help="Load legacy models", action='store_true')
+    parser.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
     parser.add_argument("--input_model", help="Input model (to run test and not train)")
     parser.add_argument("--td", help="Train data file")
     parser.add_argument("--tl", help="Train labels file")
