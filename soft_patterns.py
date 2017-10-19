@@ -59,12 +59,19 @@ class Semiring:
         self.times = times
 
 
-def plus(x, y): return x + y
+def plus(x, y):
+    return x + y
 
 
+def neg_infinity(*sizes):
+    return -100 * ones(*sizes)  # not really -inf, shh
+
+
+# element-wise plus, times
 ProbSemiring = Semiring(zeros, ones, plus, mul)
 
-MaxPlusSemiring = Semiring(zeros, zeros, lambda x, y: torch.max(x, y)[0], plus)
+# element-wise max, plus
+MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, plus)
 
 
 class SoftPatternClassifier(Module):
@@ -185,9 +192,9 @@ class SoftPatternClassifier(Module):
 
         n = 3  # max_score, start_idx, end_idx
 
-        max_scores = Variable(zeros(self.num_patterns, len(dev_set), n))
+        max_scores = Variable(MaxPlusSemiring.zero(self.num_patterns, len(dev_set), n))
 
-        zero_padding = fixed_var(zeros(self.num_patterns, 1), self.gpu)
+        zero_padding = fixed_var(self.semiring.zero(self.num_patterns, 1), self.gpu)
         eps_value = self.get_eps_value()
         self_loop_scale = self.get_self_loop_scale()
 
@@ -202,10 +209,10 @@ class SoftPatternClassifier(Module):
             # Todo: to ignore self loops, uncomment the next line
             # for i in range(len(doc) - self.pattern_length + 2):
             for i in range(len(doc)):
-                hiddens = Variable(zeros(self.num_patterns, self.pattern_length).type(self.dtype))
+                hiddens = Variable(self.semiring.zero(self.num_patterns, self.pattern_length).type(self.dtype))
 
                 # Start state
-                hiddens[:, 0] = 1
+                hiddens[:, 0] = self.semiring.one(self.num_patterns, 1).type(self.dtype)
                 # first_scores = Variable(zeros(self.num_patterns))
 
                 # Todo: when we have self loops, uncomment the next line
@@ -236,7 +243,6 @@ class SoftPatternClassifier(Module):
                             # max_scores[p, d, 3] = first_scores[p]
 
         print()
-        # print(max_score[0].data[0], max_start, max_end)
         return max_scores
 
     def get_transition_matrices(self, doc):
@@ -255,18 +261,18 @@ class SoftPatternClassifier(Module):
         Calculate score for one document.
         doc -- a sequence of indices that correspond to the word embedding matrix
         """
-        scores = Variable(zeros(self.num_patterns).type(self.dtype))
+        scores = Variable(self.semiring.zero(self.num_patterns).type(self.dtype))
 
         # hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
-        hiddens = Variable(zeros(self.num_patterns, self.pattern_length).type(self.dtype))
+        hiddens = Variable(self.semiring.zero(self.num_patterns, self.pattern_length).type(self.dtype))
 
         # Start state
-        hiddens[:, 0] = 1
+        hiddens[:, 0] = self.semiring.one(self.num_patterns, 1).type(self.dtype)
 
         # adding start for each word in the document.
-        restart_padding = fixed_var(ones(self.num_patterns, 1), self.gpu)
+        restart_padding = fixed_var(self.semiring.one(self.num_patterns, 1), self.gpu)
 
-        zero_padding = fixed_var(zeros(self.num_patterns, 1), self.gpu)
+        zero_padding = fixed_var(self.semiring.zero(self.num_patterns, 1), self.gpu)
 
         eps_value = self.get_eps_value()
         self_loop_scale = self.get_self_loop_scale()
@@ -281,7 +287,7 @@ class SoftPatternClassifier(Module):
                                            zero_padding,
                                            restart_padding)
             # Score is the final column of hiddens
-            scores = scores + hiddens[:, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
+            scores = self.semiring.plus(scores, hiddens[:, -1])  # mm(hidden, self.final)  # TODO: change if learning final state
 
         return self.mlp.forward(stack(scores).t())
 
