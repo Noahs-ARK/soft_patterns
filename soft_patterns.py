@@ -7,14 +7,13 @@ from time import monotonic
 import numpy as np
 import os
 import torch
-from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones, cuda
+from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones
 from torch.autograd import Variable
 from torch.functional import stack
 from torch.nn import Module, Parameter
 from torch.nn.functional import sigmoid, log_softmax, nll_loss
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
 
 from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP
@@ -48,6 +47,26 @@ def normalize(data):
         data[i] = data[i] / norm(data[i])  # unit length
 
 
+class Semiring:
+    def __init__(self,
+                 zero,
+                 one,
+                 plus,
+                 times):
+        self.zero = zero
+        self.one = one
+        self.plus = plus
+        self.times = times
+
+
+def plus(x, y): return x + y
+
+
+ProbSemiring = Semiring(zeros, ones, plus, mul)
+
+MaxPlusSemiring = Semiring(zeros, zeros, lambda x, y: torch.max(x, y)[0], plus)
+
+
 class SoftPatternClassifier(Module):
     """
     A text classification model that feeds the document scores from a bunch of
@@ -62,10 +81,12 @@ class SoftPatternClassifier(Module):
                  num_classes,
                  embeddings,
                  vocab,
+                 semiring,
                  gpu=False,
                  dropout=0,
                  legacy=False):
         super(SoftPatternClassifier, self).__init__()
+        self.semiring = semiring
         self.vocab = vocab
         self.embeddings = fixed_var(FloatTensor(embeddings), gpu)
 
@@ -75,11 +96,10 @@ class SoftPatternClassifier(Module):
             self.dtype = torch.cuda.FloatTensor
 
         self.gpu = gpu
-        # self.patterns = torch.nn.ModuleList([SoftPattern(pattern_length, self.embeddings, vocab) for _ in range(num_patterns)])
         self.mlp = MLP(num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes, dropout, legacy)
 
         self.word_dim = len(embeddings[0])
-        self.num_diags = 2
+        self.num_diags = 2  # self-loops and single-forward-steps
         self.pattern_length = pattern_length
         diag_data = randn(num_patterns * self.num_diags * pattern_length, self.word_dim).type(self.dtype)
         normalize(diag_data)
@@ -96,6 +116,7 @@ class SoftPatternClassifier(Module):
         self.bias = Parameter(bias_data)
         self.epsilon = Parameter(epsilon_data)
 
+        # TODO: learned? hyperparameter?
         # self.epsilon_scale = Parameter(randn(1).type(self.dtype))
         # self.self_loop_scale = Parameter(randn(1).type(self.dtype))
         self.epsilon_scale = fixed_var(FloatTensor([.5]).type(self.dtype))
@@ -111,11 +132,14 @@ class SoftPatternClassifier(Module):
 
     def visualize_pattern(self, dev_set=None, dev_text=None, n_top_scoring=5):
         # 1 above main diagonal
-        viewed_tensor = self.diags.view(self.num_patterns, self.num_diags, self.pattern_length, self.word_dim)[:, 1,
-                        :-1, :]
-
+        viewed_tensor = self.diags.view(self.num_patterns,
+                                        self.num_diags,
+                                        self.pattern_length,
+                                        self.word_dim)[:, 1, :-1, :]
         norms = norm(viewed_tensor, 2, 2)
-        viewed_biases = self.bias.view(self.num_patterns, self.num_diags, self.pattern_length)[:, 1, :-1]
+        viewed_biases = self.bias.view(self.num_patterns,
+                                       self.num_diags,
+                                       self.pattern_length)[:, 1, :-1]
 
         # print(norms.size(), viewed_biases.size())
         # for p in range(self.num_patterns):
@@ -130,8 +154,10 @@ class SoftPatternClassifier(Module):
 
         nearest_neighbors = get_nearest_neighbors(self.diags.data, embeddings)
 
-        reviewed_nearest_neighbors = nearest_neighbors.view(self.num_patterns, self.num_diags, self.pattern_length)[:,
-                                     1, :-1]
+        reviewed_nearest_neighbors = \
+            nearest_neighbors.view(self.num_patterns,
+                                   self.num_diags,
+                                   self.pattern_length)[:, 1, :-1]
 
         if dev_set is not None:
             # print(dev_set[0])
@@ -154,7 +180,7 @@ class SoftPatternClassifier(Module):
 
     def get_top_scoring_sequences(self, dev_set):
         """
-        Get top scoring sequence in doc for this pattern (for intepretation purposes)
+        Get top scoring sequence in doc for this pattern (for interpretation purposes)
         """
 
         n = 3  # max_score, start_idx, end_idx
@@ -165,13 +191,11 @@ class SoftPatternClassifier(Module):
         eps_value = self.get_eps_value()
         self_loop_scale = self.get_self_loop_scale()
 
-        for d in range(len(dev_set)):
+        for d, (doc, _) in enumerate(dev_set):
             if (d + 1) % 10 == 0:
                 print(".", end="", flush=True)
                 # if (d + 1) % 100 == 0:
                 #     break  # only visualize first 100 docs
-
-            doc = dev_set[d][0]
 
             transition_matrices = self.get_transition_matrices(doc)
 
@@ -268,17 +292,41 @@ class SoftPatternClassifier(Module):
         return sigmoid(self.self_loop_scale)
 
     def get_eps_value(self):
-        return torch.mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
+        return mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
 
-    def transition_once(self, eps_value, hiddens, self_loop_scale, transition_matrix_val, zero_padding, restart_padding):
-        # New value for hidden state
-        hiddens = cat((zero_padding, mul(hiddens[:, :-1], transition_matrix_val[:, 1, :-1])), 1) \
-                  + torch.mul(self_loop_scale,
-                              mul(hiddens, transition_matrix_val[:, 0, :]))  # Adding the main diagonal (self loops)
-        # Adding epsilon transitions (skipping words)
-        # print("Sizes:",hiddens[:, :-1].size(), eps_value.size())
-        hiddens = hiddens + cat((restart_padding, mul(hiddens[:, :-1], eps_value)), 1)
-        return hiddens
+    def transition_once(self,
+                        eps_value,
+                        hiddens,
+                        self_loop_scale,
+                        transition_matrix_val,
+                        zero_padding,
+                        restart_padding):
+        # single steps forward (consume a token, move forward one state)
+        result = \
+            cat((zero_padding,
+                 self.semiring.times(
+                     hiddens[:, :-1],
+                     transition_matrix_val[:, 1, :-1])
+                 ), 1)
+        # Adding self loops (consume a token, stay in same state)
+        result = \
+            self.semiring.plus(
+                result,
+                mul(self_loop_scale,
+                    self.semiring.times(
+                        hiddens,
+                        transition_matrix_val[:, 0, :]
+                    )))
+        # Adding epsilon transitions (don't consume a token, move forward one state)
+        result = \
+            self.semiring.plus(
+                result,
+                cat((restart_padding,  # Adding the start state
+                     self.semiring.times(
+                         hiddens[:, :-1],
+                         eps_value     # doesn't depend on token, just state
+                     )), 1))
+        return result
 
     def transition_matrix(self, word_vec):
         result = sigmoid(mm(self.diags, word_vec) + self.bias).t().view(
@@ -305,6 +353,7 @@ def train_one_doc(model, doc, num_classes, gold_output, optimizer, gpu=False):
     loss.backward()
     optimizer.step()
     return loss.data[0]
+
 
 def compute_loss(model, doc, num_classes, gold_output, gpu):
     output = model.forward(doc)
@@ -367,9 +416,9 @@ def train(train_data,
 
         # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
         print(
-            "iteration: {:>7,} train time: {:>9,.3f}m, eval time: {:>9,.3f}m "\
-                "train loss: {:>12,.3f} train_acc: {:>8,.3f}% " \
-                "dev loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
+            "iteration: {:>7,} train time: {:>9,.3f}m, eval time: {:>9,.3f}m " \
+            "train loss: {:>12,.3f} train_acc: {:>8,.3f}% " \
+            "dev loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
                 # "iteration: {:>7,} time: {:>9,.3f}s loss: {:>12,.3f} dev_acc: {:>8,.3f}%".format(
                 it,
                 (finish_iter_time - start_time) / 60,
@@ -443,6 +492,7 @@ def main(args):
         dev_data = dev_data[:n]
 
     dropout = None if args.td is None else args.dropout
+    semiring = MaxPlusSemiring if args.maxplus is None else ProbSemiring
 
     model = SoftPatternClassifier(num_patterns,
                                   pattern_length,
@@ -451,6 +501,7 @@ def main(args):
                                   num_classes,
                                   embeddings,
                                   reverse_vocab,
+                                  semiring,
                                   args.gpu,
                                   dropout,
                                   args.legacy)
@@ -518,5 +569,6 @@ if __name__ == '__main__':
     parser.add_argument("--vd", help="Validation data file", required=True)
     parser.add_argument("--vl", help="Validation labels file", required=True)
     parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
+    parser.add_argument("--maxplus", help="Use max-plus semiring instead of plus-times", action='store_true')
 
     sys.exit(main(parser.parse_args()))
