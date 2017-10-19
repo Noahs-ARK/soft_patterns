@@ -307,9 +307,20 @@ class SoftPatternClassifier(Module):
                         transition_matrix_val,
                         zero_padding,
                         restart_padding):
+        # Adding epsilon transitions (don't consume a token, move forward one state)
+        # We do this before self-loops and single-steps.
+        # We only allow one epsilon transition in a row.
+        hiddens = \
+            self.semiring.plus(
+                hiddens,
+                cat((zero_padding,
+                     self.semiring.times(
+                         hiddens[:, :-1],
+                         eps_value     # doesn't depend on token, just state
+                     )), 1))
         # single steps forward (consume a token, move forward one state)
         result = \
-            cat((zero_padding,
+            cat((restart_padding,  # <- Adding the start state
                  self.semiring.times(
                      hiddens[:, :-1],
                      transition_matrix_val[:, 1, :-1])
@@ -323,15 +334,6 @@ class SoftPatternClassifier(Module):
                         hiddens,
                         transition_matrix_val[:, 0, :]
                     )))
-        # Adding epsilon transitions (don't consume a token, move forward one state)
-        result = \
-            self.semiring.plus(
-                result,
-                cat((restart_padding,  # Adding the start state
-                     self.semiring.times(
-                         hiddens[:, :-1],
-                         eps_value     # doesn't depend on token, just state
-                     )), 1))
         return result
 
     def transition_matrix(self, word_vec):
