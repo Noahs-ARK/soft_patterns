@@ -8,7 +8,8 @@ import numpy as np
 import os
 import torch
 from torch import FloatTensor, cuda
-from torch.nn import Module, Dropout
+from torch.functional import stack
+from torch.nn import Module, Dropout2d
 
 from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP
@@ -28,7 +29,7 @@ class DanClassifier(Module):
                  embeddings,
                  vocab,
                  gpu=False,
-                 dropout=0.0):
+                 dropout=0.1):
         super(DanClassifier, self).__init__()
         self.vocab = vocab
         self.embeddings = fixed_var(FloatTensor(embeddings), gpu)
@@ -44,21 +45,25 @@ class DanClassifier(Module):
                        num_classes,
                        dropout,
                        legacy=False)
-        if dropout:
-            self.dropout = Dropout(dropout)
-        else:
-            self.dropout = None
+        self.dropout = Dropout2d(dropout) if dropout else None
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def forward(self, doc):
         """ Average all word vectors in the doc, and feed into an MLP """
-        avg_word_vector =\
-            sum(self.embeddings[i] for i in doc) / len(doc)
+        n = len(doc)
+        doc_vectors = stack([self.embeddings[i] for i in doc])
+        if self.dropout:
+            # dropout entire words at a time
+            doc_vectors = self.dropout(doc_vectors.view(n, 1, self.word_dim)).view(n, self.word_dim)
+        avg_word_vector = torch.sum(doc_vectors, dim=0) / n
         return self.mlp.forward(avg_word_vector)
 
     def predict(self, doc):
+        old_training = self.training
+        self.train(False)
         output = self.forward(doc).data
         _, am = torch.max(output, 0)
+        self.train(old_training)
         return int(am[0])
 
 
