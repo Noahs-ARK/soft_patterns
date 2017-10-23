@@ -10,7 +10,7 @@ import torch
 from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones
 from torch.autograd import Variable
 from torch.functional import stack
-from torch.nn import Module, Parameter
+from torch.nn import Module, Parameter, ModuleList
 from torch.nn.functional import sigmoid, log_softmax, nll_loss
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -81,8 +81,7 @@ class SoftPatternClassifier(Module):
     """
 
     def __init__(self,
-                 num_patterns,
-                 pattern_length,
+                 pattern_specs,
                  mlp_hidden_dim,
                  num_mlp_layers,
                  num_classes,
@@ -103,17 +102,30 @@ class SoftPatternClassifier(Module):
             self.dtype = torch.cuda.FloatTensor
 
         self.gpu = gpu
-        self.mlp = MLP(num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes, dropout, legacy)
+
+        self.total_num_patterns = int(np.sum(list(pattern_specs.values())))
+
+        self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes, dropout, legacy)
 
         self.word_dim = len(embeddings[0])
         self.num_diags = 2  # self-loops and single-forward-steps
-        self.pattern_length = pattern_length
-        diag_data = randn(num_patterns * self.num_diags * pattern_length, self.word_dim).type(self.dtype)
-        normalize(diag_data)
-        self.num_patterns = num_patterns
+        self.pattern_specs = pattern_specs
+        self.pattern_lengths = sorted(pattern_specs.keys())
+        self.starts = []
+        self.ends = []
 
-        bias_data = randn(num_patterns * self.num_diags * pattern_length, 1).type(self.dtype)
-        epsilon_data = randn(num_patterns, (pattern_length - 1)).type(self.dtype)
+        diag_data_size = 0
+
+        for i in self.pattern_lengths:
+            self.starts.append(diag_data_size)
+            diag_data_size += i * self.num_diags * pattern_specs[i]
+            self.ends.append(diag_data_size)
+
+        diag_data_size *= self.num_diags
+        diag_data = randn(diag_data_size, self.word_dim).type(self.dtype)
+        normalize(diag_data)
+
+        bias_data = randn(diag_data_size, 1).type(self.dtype)
 
         self.dropout = None
         if dropout:
@@ -121,7 +133,13 @@ class SoftPatternClassifier(Module):
 
         self.diags = Parameter(diag_data)
         self.bias = Parameter(bias_data)
-        self.epsilon = Parameter(epsilon_data)
+        epsilons = [
+            Parameter(randn(self.pattern_specs[pattern_length], (pattern_length - 1)).type(self.dtype))
+            for pattern_length in self.pattern_lengths
+        ]
+
+        #FIXME
+        self.epsilons = epsilons#ModuleList(epsilons)
 
         # TODO: learned? hyperparameter?
         # self.epsilon_scale = Parameter(randn(1).type(self.dtype))
@@ -138,52 +156,60 @@ class SoftPatternClassifier(Module):
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def visualize_pattern(self, dev_set=None, dev_text=None, n_top_scoring=5):
-        # 1 above main diagonal
-        viewed_tensor = self.diags.view(self.num_patterns,
-                                        self.num_diags,
-                                        self.pattern_length,
-                                        self.word_dim)[:, 1, :-1, :]
-        norms = norm(viewed_tensor, 2, 2)
-        viewed_biases = self.bias.view(self.num_patterns,
-                                       self.num_diags,
-                                       self.pattern_length)[:, 1, :-1]
-
-        # print(norms.size(), viewed_biases.size())
-        # for p in range(self.num_patterns):
-        #     print("Pattern",p)
-        #     for i in range(self.pattern_length-1):
-        #         print("\tword",i,"norm",round(norms.data[p,i],3),"bias",round(viewed_biases.data[p,i],3))
-
         embeddings = self.embeddings.data  # torch.transpose(self.embeddings.data, 0, 1)
-
-        # print(viewed_tensor.size(), (self.num_patterns*(self.pattern_length-1), self.word_dim))
-        # reviewed_tensor = viewed_tensor.view(self.num_patterns*(self.pattern_length-1), self.word_dim)
-
         nearest_neighbors = get_nearest_neighbors(self.diags.data, embeddings)
-
-        reviewed_nearest_neighbors = \
-            nearest_neighbors.view(self.num_patterns,
-                                   self.num_diags,
-                                   self.pattern_length)[:, 1, :-1]
 
         if dev_set is not None:
             # print(dev_set[0])
             scores = self.get_top_scoring_sequences(dev_set)
 
-            for p in range(self.num_patterns):
-                patt_scores = scores[p, :, :]
-                # print(scores[0][0])
-                last_n = len(patt_scores) - n_top_scoring
-                sorted_keys = sorted(range(len(patt_scores)), key=lambda i: patt_scores[i][0].data[0])
-                # print(sorted_keys)
+        start = 0
+        for i in range(len(self.pattern_lengths)):
+            pattern_length = self.pattern_lengths[i]
+            num_patterns = self.pattern_specs[pattern_length]
+            print("Visualizing",num_patterns,"patterns of length", pattern_length, self.starts[i], self.ends[i])
+            # 1 above main diagonal
+            viewed_tensor = self.diags[self.starts[i]:self.ends[i],:].view(num_patterns,
+                                            self.num_diags,
+                                            pattern_length,
+                                            self.word_dim)[:, 1, :-1, :]
+            norms = norm(viewed_tensor, 2, 2)
+            viewed_biases = self.bias[self.starts[i]:self.ends[i],:].view(num_patterns,
+                                           self.num_diags,
+                                           pattern_length)[:, 1, :-1]
 
-                print("Top scoring",
-                      [(" ".join(dev_text[k][int(patt_scores[k][1].data[0]):int(patt_scores[k][2].data[0])]),
-                        round(patt_scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]],
-                      # "first score", [round(patt_scores[k][3].data[0], 3) for k in sorted_keys[last_n:]],
-                      "norms", [round(x, 3) for x in norms.data[p, :]],
-                      'biases', [round(x, 3) for x in viewed_biases.data[p, :]],
-                      'nearest neighbors', [self.vocab[x] for x in reviewed_nearest_neighbors[p, :]])
+            # print(norms.size(), viewed_biases.size())
+            # for p in range(self.num_patterns):
+            #     print("Pattern",p)
+            #     for i in range(self.pattern_length-1):
+            #         print("\tword",i,"norm",round(norms.data[p,i],3),"bias",round(viewed_biases.data[p,i],3))
+
+
+            # print(viewed_tensor.size(), (self.num_patterns*(self.pattern_length-1), self.word_dim))
+            # reviewed_tensor = viewed_tensor.view(self.num_patterns*(self.pattern_length-1), self.word_dim)
+
+            # print(nearest_neighbors.size(), self.starts[i], self.ends[i], num_patterns, self.num_diags, pattern_length)
+            reviewed_nearest_neighbors = \
+                nearest_neighbors[self.starts[i]:self.ends[i]].view(num_patterns,
+                                       self.num_diags,
+                                       pattern_length)[:, 1, :-1]
+
+            if dev_set is not None:
+                for p in range(num_patterns):
+                    patt_scores = scores[start+p, :, :]
+                    # print(scores[0][0])
+                    last_n = len(patt_scores) - n_top_scoring
+                    sorted_keys = sorted(range(len(patt_scores)), key=lambda i: patt_scores[i][0].data[0])
+                    # print(sorted_keys)
+
+                    print("Top scoring",
+                          [(" ".join(dev_text[k][int(patt_scores[k][1].data[0]):int(patt_scores[k][2].data[0])]),
+                            round(patt_scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]],
+                          # "first score", [round(patt_scores[k][3].data[0], 3) for k in sorted_keys[last_n:]],
+                          "norms", [round(x, 3) for x in norms.data[p, :]],
+                          'biases', [round(x, 3) for x in viewed_biases.data[p, :]],
+                          'nearest neighbors', [self.vocab[x] for x in reviewed_nearest_neighbors[p, :]])
+                start += num_patterns
 
     def get_top_scoring_sequences(self, dev_set):
         """
@@ -192,10 +218,15 @@ class SoftPatternClassifier(Module):
 
         n = 3  # max_score, start_idx, end_idx
 
-        max_scores = Variable(MaxPlusSemiring.zero(self.num_patterns, len(dev_set), n))
 
-        zero_padding = fixed_var(self.semiring.zero(self.num_patterns, 1), self.gpu)
-        eps_value = self.get_eps_value()
+        max_scores = Variable(MaxPlusSemiring.zero(self.total_num_patterns, len(dev_set), n))
+
+        zero_paddings = [
+            fixed_var(self.semiring.zero(self.pattern_specs[i], 1), self.gpu)
+            for i in self.pattern_lengths
+        ]
+
+        eps_values = [self.get_eps_value(i) for i in range(len(self.pattern_lengths))]
         self_loop_scale = self.get_self_loop_scale()
 
         for d, (doc, _) in enumerate(dev_set):
@@ -208,39 +239,46 @@ class SoftPatternClassifier(Module):
 
             # Todo: to ignore self loops, uncomment the next line
             # for i in range(len(doc) - self.pattern_length + 2):
+            # print(self.pattern_lengths, self.pattern_specs)
             for i in range(len(doc)):
-                hiddens = Variable(self.semiring.zero(self.num_patterns, self.pattern_length).type(self.dtype))
+                start = 0
+                for k in range(len(self.pattern_lengths)):
+                    pattern_length = self.pattern_lengths[k]
+                    num_patterns = self.pattern_specs[pattern_length]
+                    hiddens = Variable(self.semiring.zero(num_patterns, pattern_length).type(self.dtype))
 
-                # Start state
-                hiddens[:, 0] = self.semiring.one(self.num_patterns, 1).type(self.dtype)
-                # first_scores = Variable(zeros(self.num_patterns))
+                    # Start state
+                    hiddens[:, 0] = self.semiring.one(num_patterns, 1).type(self.dtype)
+                    # first_scores = Variable(zeros(num_patterns))
 
-                # Todo: when we have self loops, uncomment the next line
-                # for j in range(i, len(doc))):
-                for j in range(i, min(i + self.pattern_length - 1, len(doc))):
-                    transition_matrix_val = transition_matrices[j]
-                    hiddens = self.transition_once(
-                        eps_value,
-                        hiddens,
-                        self_loop_scale,
-                        transition_matrix_val,
-                        zero_padding,
-                        zero_padding)
+                    # Todo: when we have self loops, uncomment the next line
+                    # for j in range(i, len(doc))):
+                    # print(d, max_scores.size(), start, num_patterns)
+                    for j in range(i, min(i + pattern_length - 1, len(doc))):
+                        transition_matrix_val = transition_matrices[j][k]
+                        hiddens = self.transition_once(
+                            eps_values[k],
+                            hiddens,
+                            self_loop_scale,
+                            transition_matrix_val,
+                            zero_paddings[k],
+                            zero_paddings[k])
 
-                    # New value for hidden state
-                    # hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrices[j][:, 1, :-1])), 1)  # \
+                        # New value for hidden state
+                        # hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrices[j][:, 1, :-1])), 1)  # \
 
-                    scores = hiddens[:, -1]
+                        scores = hiddens[:, -1]
 
-                    # if i == j:
-                    #     first_scores = hiddens[:, 1]
+                        # if i == j:
+                        #     first_scores = hiddens[:, 1]
 
-                    for p in range(self.num_patterns):
-                        if scores[p].data[0] > max_scores[p, d, 0].data[0]:
-                            max_scores[p, d, 0] = scores[p]
-                            max_scores[p, d, 1] = i
-                            max_scores[p, d, 2] = j + 1
-                            # max_scores[p, d, 3] = first_scores[p]
+                        for p in range(num_patterns):
+                            if scores[p].data[0] > max_scores[start+p, d, 0].data[0]:
+                                max_scores[start+p, d, 0] = scores[p]
+                                max_scores[start+p, d, 1] = i
+                                max_scores[start+p, d, 2] = j + 1
+                                # max_scores[p, d, 3] = first_scores[p]
+                    start += num_patterns
 
         print()
         return max_scores
@@ -261,33 +299,41 @@ class SoftPatternClassifier(Module):
         Calculate score for one document.
         doc -- a sequence of indices that correspond to the word embedding matrix
         """
-        scores = Variable(self.semiring.zero(self.num_patterns).type(self.dtype))
-
-        # hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
-        hiddens = Variable(self.semiring.zero(self.num_patterns, self.pattern_length).type(self.dtype))
-
-        # Start state
-        hiddens[:, 0] = self.semiring.one(self.num_patterns, 1).type(self.dtype)
-
-        # adding start for each word in the document.
-        restart_padding = fixed_var(self.semiring.one(self.num_patterns, 1), self.gpu)
-
-        zero_padding = fixed_var(self.semiring.zero(self.num_patterns, 1), self.gpu)
-
-        eps_value = self.get_eps_value()
-        self_loop_scale = self.get_self_loop_scale()
-
         transition_matrices = self.get_transition_matrices(doc)
 
-        for transition_matrix_val in transition_matrices:
-            hiddens = self.transition_once(eps_value,
-                                           hiddens,
-                                           self_loop_scale,
-                                           transition_matrix_val,
-                                           zero_padding,
-                                           restart_padding)
-            # Score is the final column of hiddens
-            scores = self.semiring.plus(scores, hiddens[:, -1])  # mm(hidden, self.final)  # TODO: change if learning final state
+        scores = Variable(self.semiring.zero(self.total_num_patterns).type(self.dtype))
+
+
+        start = 0
+        for i in range(len(self.pattern_lengths)):
+            pattern_length = self.pattern_lengths[i]
+            num_patterns = self.pattern_specs[pattern_length]
+            # hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
+            hiddens = Variable(self.semiring.zero(num_patterns, pattern_length).type(self.dtype))
+
+            # Start state
+            hiddens[:, 0] = self.semiring.one(num_patterns, 1).type(self.dtype)
+
+            # adding start for each word in the document.
+            restart_padding = fixed_var(self.semiring.one(num_patterns, 1), self.gpu)
+
+            zero_padding = fixed_var(self.semiring.zero(num_patterns, 1), self.gpu)
+
+            eps_value = self.get_eps_value(i)
+            self_loop_scale = self.get_self_loop_scale()
+
+
+            for transition_matrix_val in transition_matrices:
+                hiddens = self.transition_once(eps_value,
+                                               hiddens,
+                                               self_loop_scale,
+                                               transition_matrix_val[i],
+                                               zero_padding,
+                                               restart_padding)
+                # Score is the final column of hiddens
+                scores[start:start+num_patterns] = \
+                    self.semiring.plus(scores[start:start+num_patterns], hiddens[:, -1])  # mm(hidden, self.final)  # TODO: change if learning final state
+            start += num_patterns
 
         return self.mlp.forward(stack(scores).t())
 
@@ -297,8 +343,8 @@ class SoftPatternClassifier(Module):
     def get_self_loop_scale(self):
         return sigmoid(self.self_loop_scale)
 
-    def get_eps_value(self):
-        return mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
+    def get_eps_value(self, pattern_length_index):
+        return mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilons[pattern_length_index]))
 
     def transition_once(self,
                         eps_value,
@@ -337,9 +383,7 @@ class SoftPatternClassifier(Module):
         return result
 
     def transition_matrix(self, word_vec):
-        result = sigmoid(mm(self.diags, word_vec) + self.bias).t().view(
-            self.num_patterns, self.num_diags, self.pattern_length
-        )
+        result = sigmoid(mm(self.diags, word_vec) + self.bias).t()
 
         if self.gpu:
             result = result.cuda()
@@ -347,7 +391,21 @@ class SoftPatternClassifier(Module):
         if self.dropout:
             result = self.dropout(result)
 
-        return result
+        results = []
+
+        for i in range(len(self.pattern_lengths)):
+            pattern_length = self.pattern_lengths[i]
+            num_patterns = self.pattern_specs[pattern_length]
+            start = self.starts[i]
+            end = self.ends[i]
+
+            # print(start,end,result.size(), num_patterns, self.num_diags, pattern_length)
+            results.append(result[:,start:end].view(
+                num_patterns, self.num_diags, pattern_length)
+            )
+
+
+        return results
 
     def predict(self, doc):
         output = self.forward(doc).data
@@ -450,8 +508,7 @@ def train(train_data,
 
 def main(args):
     print(args)
-    pattern_length = args.pattern_length
-    num_patterns = args.num_patterns
+    pattern_specs = dict(([int(y) for y in x.split(":")]) for x in args.patterns.split(","))
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
     num_mlp_layers = args.num_mlp_layers
@@ -496,14 +553,15 @@ def main(args):
     print("num_classes:", num_classes)
 
     if n is not None:
-        train_data = train_data[:n]
+        if args.td is not None:
+            train_data = train_data[:n]
+
         dev_data = dev_data[:n]
 
     dropout = None if args.td is None else args.dropout
     semiring = MaxPlusSemiring if args.maxplus is None else ProbSemiring
 
-    model = SoftPatternClassifier(num_patterns,
-                                  pattern_length,
+    model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
                                   num_mlp_layers,
                                   num_classes,
@@ -561,8 +619,9 @@ if __name__ == '__main__':
     parser.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
     parser.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
     parser.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
-    parser.add_argument("-p", "--pattern_length", help="Length of pattern", type=int, default=2)
-    parser.add_argument("-k", "--num_patterns", help="Number of patterns", type=int, default=2)
+    parser.add_argument("-p", "--patterns",
+                        help="Pattern lengths and numbers: a comma separated list of length:number pairs",
+                        default="5:50,4:50,3:50,2:50")
     parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
     parser.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
     parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
