@@ -10,7 +10,7 @@ import torch
 from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones
 from torch.autograd import Variable
 from torch.functional import stack
-from torch.nn import Module, Parameter, ModuleList
+from torch.nn import Module, Parameter, ParameterList
 from torch.nn.functional import sigmoid, log_softmax, nll_loss
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -111,9 +111,14 @@ class SoftPatternClassifier(Module):
         self.num_diags = 2  # self-loops and single-forward-steps
         self.pattern_specs = pattern_specs
         self.pattern_lengths = sorted(pattern_specs.keys())
+
+        # Starting point for each pattern batch
         self.starts = []
+
+        # Ending point for each pattern batch
         self.ends = []
 
+        # Total number of rows in diagonal data matrix
         diag_data_size = 0
 
         for i in self.pattern_lengths:
@@ -122,9 +127,12 @@ class SoftPatternClassifier(Module):
             self.ends.append(diag_data_size)
 
         diag_data_size *= self.num_diags
+
+
         diag_data = randn(diag_data_size, self.word_dim).type(self.dtype)
         normalize(diag_data)
 
+        # Bias term
         bias_data = randn(diag_data_size, 1).type(self.dtype)
 
         self.dropout = None
@@ -133,13 +141,14 @@ class SoftPatternClassifier(Module):
 
         self.diags = Parameter(diag_data)
         self.bias = Parameter(bias_data)
+
+        # Adding epsilon parameter to each pattern length.
         epsilons = [
             Parameter(randn(self.pattern_specs[pattern_length], (pattern_length - 1)).type(self.dtype))
             for pattern_length in self.pattern_lengths
         ]
 
-        #FIXME
-        self.epsilons = epsilons#ModuleList(epsilons)
+        self.epsilons = ParameterList(epsilons)
 
         # TODO: learned? hyperparameter?
         # self.epsilon_scale = Parameter(randn(1).type(self.dtype))
