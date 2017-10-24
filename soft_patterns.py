@@ -12,6 +12,7 @@ from torch.autograd import Variable
 from torch.functional import stack
 from torch.nn import Module, Parameter, ParameterList
 from torch.nn.functional import sigmoid, log_softmax, nll_loss
+from torch.nn.utils.clip_grad import clip_grad_norm
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
@@ -418,11 +419,15 @@ class SoftPatternClassifier(Module):
         return int(argmax(output)[0])
 
 
-def train_one_doc(model, doc, num_classes, gold_output, optimizer, gpu=False):
+def train_one_doc(model, doc, num_classes, gold_output, optimizer, gpu=False, clip=None):
     """Train on one doc. """
     optimizer.zero_grad()
     loss = compute_loss(model, doc, num_classes, gold_output, gpu)
     loss.backward()
+
+    if clip is not None:
+        torch.nn.utils.clip_grad_norm(model.parameters(), clip)
+
     optimizer.step()
     return loss.data[0]
 
@@ -457,7 +462,8 @@ def train(train_data,
           model_file_prefix,
           learning_rate,
           run_scheduler=False,
-          gpu=False):
+          gpu=False,
+          clip=None):
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
 
@@ -473,7 +479,7 @@ def train(train_data,
         for i, (doc, gold) in enumerate(train_data):
             if i % 100 == 99:
                 print(".", end="", flush=True)
-            loss += train_one_doc(model, doc, num_classes, gold, optimizer, gpu)
+            loss += train_one_doc(model, doc, num_classes, gold, optimizer, gpu, clip)
 
         dev_loss = 0.0
         for i, (doc, gold) in enumerate(dev_data):
@@ -605,7 +611,8 @@ def main(args):
               model_file_prefix,
               args.learning_rate,
               args.scheduler,
-              args.gpu)
+              args.gpu,
+              args.clip)
     else:
         model.visualize_pattern(dev_data, dev_text)
         # for pattern in model.patterns:
@@ -642,6 +649,7 @@ if __name__ == '__main__':
     parser.add_argument("--vd", help="Validation data file", required=True)
     parser.add_argument("--vl", help="Validation labels file", required=True)
     parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
+    parser.add_argument("--clip", help="Gradient clipping", type=float, default=None)
     parser.add_argument("--maxplus", help="Use max-plus semiring instead of plus-times", action='store_true')
 
     sys.exit(main(parser.parse_args()))
