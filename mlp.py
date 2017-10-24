@@ -10,15 +10,12 @@ class MLP(Module):
                  hidden_layer_dim,
                  num_layers,
                  num_classes,
-                 dropout=0,
                  legacy=1):
         super(MLP, self).__init__()
 
         self.num_layers = num_layers
         self.legacy = legacy
 
-        if dropout:
-            dropout_layer = nn.Dropout(p=dropout)
         # This code is a bit strange in order to support previous versions: if num_layers is 2,
         # create two member layers (layer1 and layer2). Otherwise, create a list of layers of size num_layers
         layers = []
@@ -28,9 +25,6 @@ class MLP(Module):
             d2 = hidden_layer_dim if i < (num_layers - 1) else num_classes
 
             layer = Linear(d1, d2)
-
-            # if dropout:
-            #     layer = dropout_layer(layer)
 
             layers.append(layer)
 

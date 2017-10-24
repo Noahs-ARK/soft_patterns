@@ -105,7 +105,7 @@ class SoftPatternClassifier(Module):
 
         self.total_num_patterns = int(np.sum(list(pattern_specs.values())))
 
-        self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes, dropout, legacy)
+        self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes, legacy)
 
         self.word_dim = len(embeddings[0])
         self.num_diags = 2  # self-loops and single-forward-steps
