@@ -119,15 +119,14 @@ class SoftPatternClassifier(Module):
         self.ends = []
 
         # Total number of rows in diagonal data matrix
-        diag_data_size = 0
+        current_diag_data_idx = 0
 
         for i in self.pattern_lengths:
-            self.starts.append(diag_data_size)
-            diag_data_size += i * self.num_diags * pattern_specs[i]
-            self.ends.append(diag_data_size)
+            self.starts.append(current_diag_data_idx)
+            current_diag_data_idx += i * self.num_diags * pattern_specs[i]
+            self.ends.append(current_diag_data_idx)
 
-        diag_data_size *= self.num_diags
-
+        diag_data_size = current_diag_data_idx
 
         diag_data = randn(diag_data_size, self.word_dim).type(self.dtype)
         normalize(diag_data)
@@ -144,7 +143,7 @@ class SoftPatternClassifier(Module):
 
         # Adding epsilon parameter to each pattern length.
         epsilons = [
-            Parameter(randn(self.pattern_specs[pattern_length], (pattern_length - 1)).type(self.dtype))
+            Parameter(randn(self.pattern_specs[pattern_length], pattern_length - 1).type(self.dtype))
             for pattern_length in self.pattern_lengths
         ]
 
@@ -312,7 +311,6 @@ class SoftPatternClassifier(Module):
 
         scores = Variable(self.semiring.zero(self.total_num_patterns).type(self.dtype))
 
-
         start = 0
         for i in range(len(self.pattern_lengths)):
             pattern_length = self.pattern_lengths[i]
@@ -330,7 +328,6 @@ class SoftPatternClassifier(Module):
 
             eps_value = self.get_eps_value(i)
             self_loop_scale = self.get_self_loop_scale()
-
 
             for transition_matrix_val in transition_matrices:
                 hiddens = self.transition_once(eps_value,
