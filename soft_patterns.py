@@ -16,6 +16,8 @@ from torch.nn.utils.clip_grad import clip_grad_norm
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+from tensorboardX import SummaryWriter
+
 from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP
 
@@ -467,6 +469,11 @@ def train(train_data,
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
 
+    writer = None
+
+    if model_save_dir is not None:
+        writer = SummaryWriter(os.path.join(model_save_dir, "logs"))
+
     if run_scheduler:
         scheduler = ReduceLROnPlateau(optimizer, 'min', 0.1, 10, True)
 
@@ -477,15 +484,35 @@ def train(train_data,
 
         loss = 0.0
         for i, (doc, gold) in enumerate(train_data):
+            loss += train_one_doc(model, doc, num_classes, gold, optimizer, gpu, clip)
             if i % 100 == 99:
                 print(".", end="", flush=True)
-            loss += train_one_doc(model, doc, num_classes, gold, optimizer, gpu, clip)
+                if writer is not None:
+                    for name, param in model.named_parameters():
+                        writer.add_scalar("parameter_mean/" + name,
+                                                           param.data.mean(),
+                                                           i)
+                        writer.add_scalar("parameter_std/" + name, param.data.std(), i)
+                        if param.grad is not None:
+                            writer.add_scalar("gradient_mean/" + name,
+                                                               param.grad.data.mean(),
+                                                               i)
+                            writer.add_scalar("gradient_std/" + name,
+                                                               param.grad.data.std(),
+                                                               i)
+                    writer.add_scalar("loss/loss_train", loss, i)
+
+
 
         dev_loss = 0.0
         for i, (doc, gold) in enumerate(dev_data):
+            dev_loss += compute_loss(model, doc, num_classes, gold, gpu).data[0]
             if i % 100 == 99:
                 print(".", end="", flush=True)
-            dev_loss += compute_loss(model, doc, num_classes, gold, gpu).data[0]
+
+                if writer is not None:
+                    writer.add_scalar("loss/loss_dev", dev_loss, i)
+
 
         print("\n")
         finish_iter_time = monotonic()
