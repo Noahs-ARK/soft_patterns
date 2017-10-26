@@ -10,8 +10,8 @@ import torch
 from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones
 from torch.autograd import Variable
 from torch.functional import stack
-from torch.nn import Module, Parameter, ParameterList
-from torch.nn.functional import sigmoid, log_softmax, nll_loss
+from torch.nn import Module, Parameter, ParameterList, NLLLoss
+from torch.nn.functional import sigmoid, log_softmax
 from torch.nn.utils.clip_grad import clip_grad_norm
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -77,6 +77,29 @@ ProbSemiring = Semiring(zeros, ones, plus, mul)
 MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, plus)
 
 
+class Batch:
+    def __init__(self, sentences, embeddings, gpu):
+        # print("s is", sentences)
+        self.docs = sentences
+        self.index_to_word = dict()
+        self.word_to_index = []
+        for i in range(len(sentences)):
+            for word_index in sentences[i]:
+                if word_index not in self.index_to_word:
+                    self.index_to_word[word_index] = len(self.word_to_index)
+                    self.word_to_index.append(word_index)
+
+
+        local_embeddings = [embeddings[index] for index in self.word_to_index]
+        self.embeddings_matrix =  fixed_var(FloatTensor(local_embeddings).t(), gpu)
+
+        if gpu:
+            self.embeddings_matrix.cuda()
+
+    def size(self):
+        return len(self.docs)
+
+
 class SoftPatternClassifier(Module):
     """
     A text classification model that feeds the document scores from a bunch of
@@ -97,11 +120,10 @@ class SoftPatternClassifier(Module):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
         self.vocab = vocab
-        self.embeddings = fixed_var(FloatTensor(embeddings), gpu)
+        self.embeddings = embeddings
 
         self.dtype = torch.FloatTensor
         if gpu:
-            self.embeddings.cuda()
             self.dtype = torch.cuda.FloatTensor
 
         self.gpu = gpu
@@ -167,8 +189,7 @@ class SoftPatternClassifier(Module):
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def visualize_pattern(self, dev_set=None, dev_text=None, n_top_scoring=5):
-        embeddings = self.embeddings.data  # torch.transpose(self.embeddings.data, 0, 1)
-        nearest_neighbors = get_nearest_neighbors(self.diags.data, embeddings)
+        nearest_neighbors = get_nearest_neighbors(self.diags.data, self.embeddings)
 
         if dev_set is not None:
             # print(dev_set[0])
@@ -294,25 +315,40 @@ class SoftPatternClassifier(Module):
         print()
         return max_scores
 
-    def get_transition_matrices(self, doc):
+
+    def get_transition_matrices(self, batch):
+        mm_res = mm(self.diags, batch.embeddings_matrix)
+        transition_probabilities = sigmoid(mm_res + self.bias.expand(self.bias.size()[0], mm_res.size()[1])).t()
+
+        if self.gpu:
+            transition_probabilities = transition_probabilities.cuda()
+
+        if self.dropout:
+            transition_probabilities = self.dropout(transition_probabilities)
+
+
         # transition matrix for each token in doc
         transition_matrices = []
-        for i in range(len(doc)):
-            word_index = doc[i]
-            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
+        for doc in batch.docs:
+            local_transition_matrices = []
+            for i in range(len(doc)):
+                word_index = doc[i]
+    #            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
 
-            transition_matrices.append(self.transition_matrix(x))
+                local_transition_matrices.append(self.transition_matrix(transition_probabilities, batch, word_index))
+
+            transition_matrices.append(local_transition_matrices)
 
         return transition_matrices
 
-    def forward(self, doc):
+    def forward(self, batch):
         """
         Calculate score for one document.
         doc -- a sequence of indices that correspond to the word embedding matrix
         """
-        transition_matrices = self.get_transition_matrices(doc)
+        transition_matrices = self.get_transition_matrices(batch)
 
-        scores = Variable(self.semiring.zero(self.total_num_patterns).type(self.dtype))
+        scores = Variable(self.semiring.zero(batch.size(), self.total_num_patterns).type(self.dtype))
 
         start = 0
         for i in range(len(self.pattern_lengths)):
@@ -332,19 +368,20 @@ class SoftPatternClassifier(Module):
             eps_value = self.get_eps_value(i)
             self_loop_scale = self.get_self_loop_scale()
 
-            for transition_matrix_val in transition_matrices:
-                hiddens = self.transition_once(eps_value,
-                                               hiddens,
-                                               self_loop_scale,
-                                               transition_matrix_val[i],
-                                               zero_padding,
-                                               restart_padding)
-                # Score is the final column of hiddens
-                scores[start:start+num_patterns] = \
-                    self.semiring.plus(scores[start:start+num_patterns], hiddens[:, -1])  # mm(hidden, self.final)  # TODO: change if learning final state
+            for doc_index in range(len(transition_matrices)):
+                for transition_matrix_val in transition_matrices[doc_index]:
+                    hiddens = self.transition_once(eps_value,
+                                                   hiddens,
+                                                   self_loop_scale,
+                                                   transition_matrix_val[i],
+                                                   zero_padding,
+                                                   restart_padding)
+                    # Score is the final column of hiddens
+                    scores[doc_index, start:start+num_patterns] = \
+                        self.semiring.plus(scores[doc_index, start:start+num_patterns], hiddens[:, -1])  # mm(hidden, self.final)  # TODO: change if learning final state
             start += num_patterns
 
-        return self.mlp.forward(stack(scores).t())
+        return self.mlp.forward(stack(scores, 1).t())
 
         # scores = stack([p.forward(doc) for p in self.patterns])
         # return self.mlp.forward(scores.t())
@@ -391,14 +428,9 @@ class SoftPatternClassifier(Module):
                     )))
         return result
 
-    def transition_matrix(self, word_vec):
-        result = sigmoid(mm(self.diags, word_vec) + self.bias).t()
-
-        if self.gpu:
-            result = result.cuda()
-
-        if self.dropout:
-            result = self.dropout(result)
+    def transition_matrix(self, transition_probabilities, batch, word_index):
+        result = transition_probabilities[batch.index_to_word[word_index], :]
+        # print("res size is", result.size())
 
         results = []
 
@@ -408,51 +440,69 @@ class SoftPatternClassifier(Module):
             start = self.starts[i]
             end = self.ends[i]
 
-            # print(start,end,result.size(), num_patterns, self.num_diags, pattern_length)
-            results.append(result[:,start:end].view(
+            # print(start,end,result[start:end].size(), result.size(), num_patterns, self.num_diags, pattern_length)
+            results.append(result[start:end].contiguous().view(
                 num_patterns, self.num_diags, pattern_length)
             )
 
-
         return results
 
-    def predict(self, doc):
-        output = self.forward(doc).data
-        return int(argmax(output)[0])
+    def predict(self, batch):
+        output = self.forward(batch).data
+        return [int(x) for x in argmax(output)]
 
 
-def train_one_doc(model, doc, num_classes, gold_output, optimizer, gpu=False, clip=None):
+def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function, gpu=False, clip=None):
     """Train on one doc. """
     optimizer.zero_grad()
-    loss = compute_loss(model, doc, num_classes, gold_output, gpu)
+    loss = compute_loss(model, batch, num_classes, gold_output, loss_function, gpu)
+    # print("ls", loss.size())
     loss.backward()
 
     if clip is not None:
         torch.nn.utils.clip_grad_norm(model.parameters(), clip)
 
     optimizer.step()
-    return loss.data[0]
+    return loss.data
 
 
-def compute_loss(model, doc, num_classes, gold_output, gpu):
-    output = model.forward(doc)
-    return nll_loss(
-        log_softmax(output).view(1, num_classes),
-        fixed_var(LongTensor([gold_output]), gpu)
+def compute_loss(model, batch, num_classes, gold_output, loss_function, gpu):
+    output = model.forward(batch)
+    # print("os", output.dim(), output.size(), "bs", batch.size(), "gs", len(gold_output))
+    return loss_function(
+        log_softmax(output).view(batch.size(), num_classes),
+        fixed_var(LongTensor(gold_output), gpu)
     )
 
 
-def evaluate_accuracy(model, data):
+def evaluate_accuracy(model, data, batch_size, gpu):
     n = float(len(data))
     # for doc, gold in data[:10]:
     #     print(gold, model.predict(doc))
     # outputs = [model.forward(doc).data for doc, gold in data[:10]]
     # print(outputs)
-    predicted = [model.predict(doc) for doc, gold in data]
-    print("num predicted 1s", sum(predicted))
+    batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+
+    # print("n batches:", len(batches), "len d:", len(data), "bs:", batch_size)
+
+    correct = 0
+    num_1s = 0
+    for batch in batches:
+        # print(batch[0])
+        batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
+        gold = [x[1] for x in batch]
+
+        predicted = model.predict(batch_obj)
+
+        num_1s += sum(predicted)
+
+        # print(predicted,gold)
+        correct += sum(1 for pred, gold in zip(predicted, gold) if pred == gold)
+
+    print("num predicted 1s", num_1s)
     print("num gold 1s", sum(gold for _, gold in data))
-    correct = (1 for pred, (_, gold) in zip(predicted, data) if pred == gold)
-    return sum(correct) / n
+
+    return correct / n
 
 
 def train(train_data,
@@ -463,11 +513,15 @@ def train(train_data,
           num_iterations,
           model_file_prefix,
           learning_rate,
+          batch_size,
           run_scheduler=False,
           gpu=False,
           clip=None):
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
+    loss_function = NLLLoss(None, False)
+
+    debug_print = int(100/batch_size) + 1
 
     writer = None
 
@@ -483,9 +537,16 @@ def train(train_data,
         np.random.shuffle(train_data)
 
         loss = 0.0
-        for i, (doc, gold) in enumerate(train_data):
-            loss += train_one_doc(model, doc, num_classes, gold, optimizer, gpu, clip)
-            if i % 100 == 99:
+        batch_start = 0
+        i = 0
+        while batch_start < len(train_data):
+            # print(batch_start, batch_start+batch_size)
+            batch = train_data[batch_start:batch_start+batch_size]
+            # print(len(batch))
+            batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
+            gold = [x[1] for x in batch]
+            loss += torch.sum(train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip))
+            if i % debug_print == (debug_print-1):
                 print(".", end="", flush=True)
                 if writer is not None:
                     for name, param in model.named_parameters():
@@ -502,22 +563,34 @@ def train(train_data,
                                                                i)
                     writer.add_scalar("loss/loss_train", loss, i)
 
+            batch_start += batch_size
+            i += 1
+
 
 
         dev_loss = 0.0
-        for i, (doc, gold) in enumerate(dev_data):
-            dev_loss += compute_loss(model, doc, num_classes, gold, gpu).data[0]
-            if i % 100 == 99:
+        batch_start = 0
+        i = 0
+        while batch_start < len(dev_data):
+            batch = dev_data[batch_start:batch_start+batch_size]
+            # print(len(batch))
+            batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
+            gold = [x[1] for x in batch]
+            dev_loss += torch.sum(compute_loss(model, batch_obj, num_classes, gold, loss_function, gpu).data)
+            if i % debug_print == (debug_print-1):
                 print(".", end="", flush=True)
 
                 if writer is not None:
                     writer.add_scalar("loss/loss_dev", dev_loss, i)
 
+            batch_start += batch_size
+            i += 1
+
 
         print("\n")
         finish_iter_time = monotonic()
-        train_acc = evaluate_accuracy(model, train_data)
-        dev_acc = evaluate_accuracy(model, dev_data)
+        train_acc = evaluate_accuracy(model, train_data, batch_size, gpu)
+        dev_acc = evaluate_accuracy(model, dev_data, batch_size, gpu)
 
         # "param_norm:", math.sqrt(sum(p.data.norm() ** 2 for p in all_params)),
         print(
@@ -637,6 +710,7 @@ def main(args):
               num_iterations,
               model_file_prefix,
               args.learning_rate,
+              args.batch_size,
               args.scheduler,
               args.gpu,
               args.clip)
@@ -663,6 +737,7 @@ if __name__ == '__main__':
                         help="Pattern lengths and numbers: a comma separated list of length:number pairs",
                         default="5:50,4:50,3:50,2:50")
     parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
+    parser.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
     parser.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
     parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
