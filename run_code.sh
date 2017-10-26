@@ -22,15 +22,15 @@ elif [ "$#" -gt 4 ]; then
 		rs='_r'
 	fi
 	if [ "$#" -gt 5 ]; then
-		mp=$5
+		mp=$6
 		if [ $mp -eq 1 ]; then
 			mpf="--maxplus"
 			mps='_mp'
 		fi
 		if [ "$#" -gt 6 ]; then
-			b=$6
+			b=$7
 			if [ "$#" -gt 7 ]; then
-				if [ $mp -eq 1 ]; then
+				if [ $8 -eq 1 ]; then
 					gpu='-g'
 				fi
 			fi

@@ -12,7 +12,6 @@ from torch.autograd import Variable
 from torch.functional import stack
 from torch.nn import Module, Parameter, ParameterList, NLLLoss
 from torch.nn.functional import sigmoid, log_softmax
-from torch.nn.utils.clip_grad import clip_grad_norm
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
@@ -353,16 +352,20 @@ class SoftPatternClassifier(Module):
 
         return transition_matrices
 
-    def forward(self, batch):
+    def forward(self, batch, debug=None):
         """
         Calculate score for one document.
         doc -- a sequence of indices that correspond to the word embedding matrix
         """
+        time1 = monotonic()
         transition_matrices = self.get_transition_matrices(batch)
+        time2 = monotonic()
 
         scores = Variable(self.semiring.zero(batch.size(), self.total_num_patterns).type(self.dtype))
 
         start = 0
+
+        # Different pattern lengths
         for i in range(len(self.pattern_lengths)):
             pattern_length = self.pattern_lengths[i]
             num_patterns = self.pattern_specs[pattern_length]
@@ -380,7 +383,9 @@ class SoftPatternClassifier(Module):
             eps_value = self.get_eps_value(i)
             self_loop_scale = self.get_self_loop_scale()
 
+            # Different documents in batch
             for doc_index in range(len(transition_matrices)):
+                # For each token in document
                 for transition_matrix_val in transition_matrices[doc_index]:
                     hiddens = self.transition_once(eps_value,
                                                    hiddens,
@@ -393,6 +398,9 @@ class SoftPatternClassifier(Module):
                         self.semiring.plus(scores[doc_index, start:start+num_patterns], hiddens[:, -1])  # mm(hidden, self.final)  # TODO: change if learning final state
             start += num_patterns
 
+        if debug:
+            time3 = monotonic()
+            print("MM: {}, other: {}".format(round(time2-time1,3 ), round(time3-time2,3)))
         return self.mlp.forward(stack(scores, 1).t())
 
         # scores = stack([p.forward(doc) for p in self.patterns])
@@ -460,27 +468,44 @@ class SoftPatternClassifier(Module):
 
         return results
 
-    def predict(self, batch):
-        output = self.forward(batch).data
+    def predict(self, batch, debug=None):
+        output = self.forward(batch, debug).data
         return [int(x) for x in argmax(output)]
 
 
-def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function, gpu=False, clip=None):
+def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function, gpu=False, clip=None, debug=None):
     """Train on one doc. """
     optimizer.zero_grad()
-    loss = compute_loss(model, batch, num_classes, gold_output, loss_function, gpu)
+    time0=monotonic()
+    loss = compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, debug)
     # print("ls", loss.size())
+
+    time1=monotonic()
     loss.backward()
 
+    time2=monotonic()
     if clip is not None:
         torch.nn.utils.clip_grad_norm(model.parameters(), clip)
 
     optimizer.step()
+
+    if debug:
+        time3 = monotonic()
+        print("Time in loss: {}, time in backword: {}, time in step: {}".format(round(time1-time0, 3),
+                                                                                round(time2-time1, 3),
+                                                                                round(time3-time2, 3)))
+
     return loss.data
 
 
-def compute_loss(model, batch, num_classes, gold_output, loss_function, gpu):
-    output = model.forward(batch)
+def compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, debug=None):
+    time1= monotonic()
+    output = model.forward(batch, debug)
+
+    if debug:
+        time2= monotonic()
+        print("Forward total in loss: {}".format(round(time2-time1, 3)))
+
     # print("os", output.dim(), output.size(), "bs", batch.size(), "gs", len(gold_output))
     return loss_function(
         log_softmax(output).view(batch.size(), num_classes),
@@ -488,7 +513,7 @@ def compute_loss(model, batch, num_classes, gold_output, loss_function, gpu):
     )
 
 
-def evaluate_accuracy(model, data, batch_size, gpu):
+def evaluate_accuracy(model, data, batch_size, gpu, debug=None):
     n = float(len(data))
     # for doc, gold in data[:10]:
     #     print(gold, model.predict(doc))
@@ -505,7 +530,7 @@ def evaluate_accuracy(model, data, batch_size, gpu):
         batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
         gold = [x[1] for x in batch]
 
-        predicted = model.predict(batch_obj)
+        predicted = model.predict(batch_obj, debug)
 
         num_1s += sum(predicted)
 
@@ -529,7 +554,8 @@ def train(train_data,
           batch_size,
           run_scheduler=False,
           gpu=False,
-          clip=None):
+          clip=None,
+          debug=None):
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
     loss_function = NLLLoss(None, False)
@@ -558,7 +584,7 @@ def train(train_data,
             # print(len(batch))
             batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
             gold = [x[1] for x in batch]
-            loss += torch.sum(train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip))
+            loss += torch.sum(train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip, debug))
             if i % debug_print == (debug_print-1):
                 print(".", end="", flush=True)
                 if writer is not None:
@@ -589,7 +615,7 @@ def train(train_data,
             # print(len(batch))
             batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
             gold = [x[1] for x in batch]
-            dev_loss += torch.sum(compute_loss(model, batch_obj, num_classes, gold, loss_function, gpu).data)
+            dev_loss += torch.sum(compute_loss(model, batch_obj, num_classes, gold, loss_function, gpu, debug).data)
             if i % debug_print == (debug_print-1):
                 print(".", end="", flush=True)
 
@@ -726,7 +752,8 @@ def main(args):
               args.batch_size,
               args.scheduler,
               args.gpu,
-              args.clip)
+              args.clip,
+              args.debug)
     else:
         model.visualize_pattern(args.batch_size, dev_data, dev_text)
         # for pattern in model.patterns:
@@ -765,6 +792,7 @@ if __name__ == '__main__':
     parser.add_argument("--vl", help="Validation labels file", required=True)
     parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
     parser.add_argument("--clip", help="Gradient clipping", type=float, default=None)
+    parser.add_argument("--debug", help="Debug", action='store_true')
     parser.add_argument("--maxplus", help="Use max-plus semiring instead of plus-times", action='store_true')
 
     sys.exit(main(parser.parse_args()))
