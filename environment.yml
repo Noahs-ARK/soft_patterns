@@ -7,3 +7,5 @@ dependencies:
   - numpy==1.13.1
   - pytorch==0.2.0
   - ipython==6.2.0
+  - pip:
+    - tensorboardx==0.8
