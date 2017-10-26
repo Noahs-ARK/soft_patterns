@@ -52,7 +52,7 @@ odir=~/work/soft_patterns/output_$suffix
 
 mkdir -p $odir
 
-python -u soft_patterns.py        \
+com="python -u soft_patterns.py        \
 	 -e $HOME/resources/glove/glove.6B.100d.txt         \
 	--td $HOME/resources/text_cat/stanford_sentiment_binary//train.data         \
 	--tl $HOME/resources/text_cat/stanford_sentiment_binary//train.labels       \
@@ -64,4 +64,7 @@ python -u soft_patterns.py        \
 	-t $t \
 	-d $dim \
 	-l $lr $rf $mpf $gpu\
-	-b $b |& tee $odir/output.dat
+	-b $b"
+
+echo $com
+$com | tee $odir/output.dat

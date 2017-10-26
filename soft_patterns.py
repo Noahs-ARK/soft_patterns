@@ -39,7 +39,8 @@ def argmax(output):
 
 
 def get_nearest_neighbors(w, embeddings):
-    dot_products = mm(w, embeddings[:1000, :].t())
+    # print(w.size(), embeddings.size())
+    dot_products = mm(w, embeddings[:1000,:])
 
     return argmax(dot_products)
 
@@ -188,18 +189,18 @@ class SoftPatternClassifier(Module):
 
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
-    def visualize_pattern(self, dev_set=None, dev_text=None, n_top_scoring=5):
-        nearest_neighbors = get_nearest_neighbors(self.diags.data, self.embeddings)
+    def visualize_pattern(self, batch_size, dev_set=None, dev_text=None, n_top_scoring=5):
+        nearest_neighbors = get_nearest_neighbors(self.diags.data, FloatTensor(self.embeddings).t())
 
         if dev_set is not None:
             # print(dev_set[0])
-            scores = self.get_top_scoring_sequences(dev_set)
+            scores = self.get_top_scoring_sequences(dev_set, batch_size)
 
         start = 0
         for i in range(len(self.pattern_lengths)):
             pattern_length = self.pattern_lengths[i]
             num_patterns = self.pattern_specs[pattern_length]
-            print("Visualizing",num_patterns,"patterns of length", pattern_length, self.starts[i], self.ends[i])
+            # print("Visualizing",num_patterns,"patterns of length", pattern_length, self.starts[i], self.ends[i])
             # 1 above main diagonal
             viewed_tensor = self.diags[self.starts[i]:self.ends[i],:].view(num_patterns,
                                             self.num_diags,
@@ -243,13 +244,12 @@ class SoftPatternClassifier(Module):
                           'nearest neighbors', [self.vocab[x] for x in reviewed_nearest_neighbors[p, :]])
                 start += num_patterns
 
-    def get_top_scoring_sequences(self, dev_set):
+    def get_top_scoring_sequences(self, dev_set, batch_size):
         """
         Get top scoring sequence in doc for this pattern (for interpretation purposes)
         """
 
         n = 3  # max_score, start_idx, end_idx
-
 
         max_scores = Variable(MaxPlusSemiring.zero(self.total_num_patterns, len(dev_set), n))
 
@@ -258,59 +258,70 @@ class SoftPatternClassifier(Module):
             for i in self.pattern_lengths
         ]
 
+        debug_print = int(100 / batch_size) + 1
+
         eps_values = [self.get_eps_value(i) for i in range(len(self.pattern_lengths))]
         self_loop_scale = self.get_self_loop_scale()
 
-        for d, (doc, _) in enumerate(dev_set):
-            if (d + 1) % 10 == 0:
+        batch_start = 0
+        i = 0
+        while batch_start < len(dev_set):
+            batch = dev_set[batch_start:batch_start + batch_size]
+            # print(len(batch))
+            batch_obj = Batch([x[0] for x in batch], self.embeddings, self.gpu)
+            gold = [x[1] for x in batch]
+            if i % debug_print == (debug_print - 1):
                 print(".", end="", flush=True)
-                # if (d + 1) % 100 == 0:
-                #     break  # only visualize first 100 docs
 
-            transition_matrices = self.get_transition_matrices(doc)
+            i += 1
+
+            transition_matrices = self.get_transition_matrices(batch_obj)
 
             # Todo: to ignore self loops, uncomment the next line
             # for i in range(len(doc) - self.pattern_length + 2):
             # print(self.pattern_lengths, self.pattern_specs)
-            for i in range(len(doc)):
-                start = 0
-                for k in range(len(self.pattern_lengths)):
-                    pattern_length = self.pattern_lengths[k]
-                    num_patterns = self.pattern_specs[pattern_length]
-                    hiddens = Variable(self.semiring.zero(num_patterns, pattern_length).type(self.dtype))
+            for d in range(batch_obj.size()):
+                doc = batch_obj.docs[d]
+                for i in range(len(doc)):
+                    start = 0
+                    for k in range(len(self.pattern_lengths)):
+                        pattern_length = self.pattern_lengths[k]
+                        num_patterns = self.pattern_specs[pattern_length]
+                        hiddens = Variable(self.semiring.zero(num_patterns, pattern_length).type(self.dtype))
 
-                    # Start state
-                    hiddens[:, 0] = self.semiring.one(num_patterns, 1).type(self.dtype)
-                    # first_scores = Variable(zeros(num_patterns))
+                        # Start state
+                        hiddens[:, 0] = self.semiring.one(num_patterns, 1).type(self.dtype)
+                        # first_scores = Variable(zeros(num_patterns))
 
-                    # Todo: when we have self loops, uncomment the next line
-                    # for j in range(i, len(doc))):
-                    # print(d, max_scores.size(), start, num_patterns)
-                    for j in range(i, min(i + pattern_length - 1, len(doc))):
-                        transition_matrix_val = transition_matrices[j][k]
-                        hiddens = self.transition_once(
-                            eps_values[k],
-                            hiddens,
-                            self_loop_scale,
-                            transition_matrix_val,
-                            zero_paddings[k],
-                            zero_paddings[k])
+                        # Todo: when we have self loops, uncomment the next line
+                        # for j in range(i, len(doc))):
+                        # print(d, max_scores.size(), start, num_patterns)
+                        for j in range(i, min(i + pattern_length - 1, len(doc))):
+                            transition_matrix_val = transition_matrices[d][j][k]
+                            hiddens = self.transition_once(
+                                eps_values[k],
+                                hiddens,
+                                self_loop_scale,
+                                transition_matrix_val,
+                                zero_paddings[k],
+                                zero_paddings[k])
 
-                        # New value for hidden state
-                        # hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrices[j][:, 1, :-1])), 1)  # \
+                            # New value for hidden state
+                            # hiddens = cat((z1, mul(hiddens[:, :-1], transition_matrices[j][:, 1, :-1])), 1)  # \
 
-                        scores = hiddens[:, -1]
+                            scores = hiddens[:, -1]
 
-                        # if i == j:
-                        #     first_scores = hiddens[:, 1]
+                            # if i == j:
+                            #     first_scores = hiddens[:, 1]
 
-                        for p in range(num_patterns):
-                            if scores[p].data[0] > max_scores[start+p, d, 0].data[0]:
-                                max_scores[start+p, d, 0] = scores[p]
-                                max_scores[start+p, d, 1] = i
-                                max_scores[start+p, d, 2] = j + 1
-                                # max_scores[p, d, 3] = first_scores[p]
-                    start += num_patterns
+                            for p in range(num_patterns):
+                                if scores[p].data[0] > max_scores[start+p, batch_start+d, 0].data[0]:
+                                    max_scores[start+p, batch_start+d, 0] = scores[p]
+                                    max_scores[start+p, batch_start+d, 1] = i
+                                    max_scores[start+p, batch_start+d, 2] = j + 1
+                                    # max_scores[p, d, 3] = first_scores[p]
+                        start += num_patterns
+            batch_start += batch_size
 
         print()
         return max_scores
@@ -327,9 +338,10 @@ class SoftPatternClassifier(Module):
             transition_probabilities = self.dropout(transition_probabilities)
 
 
-        # transition matrix for each token in doc
+        # transition matrix for each document in batch
         transition_matrices = []
         for doc in batch.docs:
+            # transition matrix for each token in document
             local_transition_matrices = []
             for i in range(len(doc)):
                 word_index = doc[i]
@@ -434,6 +446,7 @@ class SoftPatternClassifier(Module):
 
         results = []
 
+        # Transition probability for pattern length.
         for i in range(len(self.pattern_lengths)):
             pattern_length = self.pattern_lengths[i]
             num_patterns = self.pattern_specs[pattern_length]
@@ -715,7 +728,7 @@ def main(args):
               args.gpu,
               args.clip)
     else:
-        model.visualize_pattern(dev_data, dev_text)
+        model.visualize_pattern(args.batch_size, dev_data, dev_text)
         # for pattern in model.patterns:
         #     pattern.visualize_pattern(dev_data, dev_text)
 
