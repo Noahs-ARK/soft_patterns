@@ -332,20 +332,13 @@ class SoftPatternClassifier(Module):
         if self.dropout:
             transition_probabilities = self.dropout(transition_probabilities)
 
-
         # transition matrix for each document in batch
-        transition_matrices = []
-        for doc in batch.docs:
-            # transition matrix for each token in document
-            local_transition_matrices = []
-            for i in range(len(doc)):
-                word_index = doc[i]
-    #            x = self.embeddings[word_index].view(self.embeddings.size()[1], 1)
-
-                local_transition_matrices.append(self.transition_matrix(transition_probabilities, batch, word_index))
-
-            transition_matrices.append(local_transition_matrices)
-
+        transition_matrices = [
+                            [
+                self.transition_matrix(transition_probabilities, batch, word_index) for word_index in doc
+            ]
+            for doc in batch.docs
+        ]
         return transition_matrices
 
     def forward(self, batch, debug=None):
