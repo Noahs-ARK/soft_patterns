@@ -1,4 +1,3 @@
-from torch import nn
 from torch.nn import Linear, Module,ModuleList
 from torch.nn.functional import relu
 

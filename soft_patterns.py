@@ -8,7 +8,7 @@ from time import monotonic
 import numpy as np
 import os
 import torch
-from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones
+from torch import FloatTensor, LongTensor, cat, mm, mul, norm, randn, zeros, ones
 from torch.autograd import Variable
 from torch.functional import stack
 from torch.nn import Module, Parameter, NLLLoss

@@ -4,6 +4,7 @@ channels:
   - soumith
 dependencies:
   - python==3.6.2
+  - mkl==2017.0.3
   - numpy==1.13.1
   - pytorch==0.2.0
   - ipython==6.2.0
