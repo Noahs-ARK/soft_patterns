@@ -11,7 +11,7 @@ import torch
 from torch import FloatTensor, LongTensor, cat, dot, log, mm, mul, norm, randn, zeros, ones
 from torch.autograd import Variable
 from torch.functional import stack
-from torch.nn import Module, Parameter, ParameterList, NLLLoss
+from torch.nn import Module, Parameter, NLLLoss
 from torch.nn.functional import sigmoid, log_softmax
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -135,6 +135,7 @@ class SoftPatternClassifier(Module):
         self.word_dim = len(embeddings[0])
         self.num_diags = 2  # self-loops and single-forward-steps
         self.pattern_specs = pattern_specs
+        self.max_pattern_length = list(pattern_specs.keys())[-1]
 
         # Starting point for each pattern batch
         self.starts = []
@@ -145,9 +146,9 @@ class SoftPatternClassifier(Module):
         # Total number of rows in diagonal data matrix
         current_diag_data_idx = 0
 
-        for pattern_len, num_patterns in self.pattern_specs.items():
+        for num_patterns in self.pattern_specs.values():
             self.starts.append(current_diag_data_idx)
-            current_diag_data_idx += pattern_len * self.num_diags * num_patterns
+            current_diag_data_idx += self.max_pattern_length * self.num_diags * num_patterns
             self.ends.append(current_diag_data_idx)
 
         diag_data_size = current_diag_data_idx
@@ -165,11 +166,7 @@ class SoftPatternClassifier(Module):
         self.diags = Parameter(diag_data)
         self.bias = Parameter(bias_data)
 
-        epsilons = [
-            Parameter(randn(num_patterns, pattern_length - 1).type(self.dtype))
-            for pattern_length, num_patterns in self.pattern_specs.items()
-        ]
-        self.epsilons = ParameterList(epsilons)
+        self.epsilon = Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1).type(self.dtype))
 
         # TODO: learned? hyperparameter?
         self.epsilon_scale = fixed_var(FloatTensor([.5]).type(self.dtype))
@@ -235,8 +232,7 @@ class SoftPatternClassifier(Module):
         ]
 
         debug_print = int(100 / batch_size) + 1
-
-        eps_values = [self.get_eps_value(i) for i in range(len(self.pattern_specs))]
+        eps_value = self.get_eps_value()
         self_loop_scale = self.get_self_loop_scale()
 
         batch_start = 0
@@ -264,7 +260,7 @@ class SoftPatternClassifier(Module):
                         for j in range(i, min(i + pattern_length - 1, len(doc))):
                             transition_matrix_val = transition_matrices[d][j][k]
                             hiddens = self.transition_once(
-                                eps_values[k],
+                                eps_value,
                                 hiddens,
                                 self_loop_scale,
                                 transition_matrix_val,
@@ -317,39 +313,40 @@ class SoftPatternClassifier(Module):
 
         start = 0
 
-        # Different pattern lengths
-        for i, (pattern_length, num_patterns) in enumerate(self.pattern_specs.items()):
-            # hiddens = [ self.start.clone() for _ in range(self.num_patterns)]
-            hiddens = Variable(self.semiring.zero(num_patterns, pattern_length).type(self.dtype))
+        hiddens = Variable(self.semiring.zero(self.total_num_patterns, self.max_pattern_length).type(self.dtype))
 
-            # Start state
-            hiddens[:, 0] = self.semiring.one(num_patterns, 1).type(self.dtype)
+        # Start state
+        hiddens[:, 0] = self.semiring.one(self.total_num_patterns, 1).type(self.dtype)
 
-            # adding start for each word in the document.
-            restart_padding = fixed_var(self.semiring.one(num_patterns, 1), self.gpu)
+        # adding start for each word in the document.
+        restart_padding = fixed_var(self.semiring.one(self.total_num_patterns, 1), self.gpu)
 
-            zero_padding = fixed_var(self.semiring.zero(num_patterns, 1), self.gpu)
+        zero_padding = fixed_var(self.semiring.zero(self.total_num_patterns, 1), self.gpu)
 
-            eps_value = self.get_eps_value(i)
-            self_loop_scale = self.get_self_loop_scale()
+        eps_value = mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
+        self_loop_scale = self.get_self_loop_scale()
 
-            # Different documents in batch
-            for doc_index in range(len(transition_matrices)):
-                # For each token in document
-                for transition_matrix_val in transition_matrices[doc_index]:
-                    hiddens = self.transition_once(eps_value,
-                                                   hiddens,
-                                                   self_loop_scale,
-                                                   transition_matrix_val[i],
-                                                   zero_padding,
-                                                   restart_padding)
-                    # Score is the final column of hiddens
-                    scores[doc_index, start:start + num_patterns] = \
+        # Different documents in batch
+        for doc_index in range(len(transition_matrices)):
+            # For each token in document
+            for transition_matrix_val in transition_matrices[doc_index]:
+                hiddens = self.transition_once(eps_value,
+                                               hiddens,
+                                               self_loop_scale,
+                                               transition_matrix_val,
+                                               zero_padding,
+                                               restart_padding)
+                # Score is the final column of hiddens
+                start = 0
+                for pattern_len, num_patterns in self.pattern_specs.items():
+                    end_state = -1 - (self.max_pattern_length - pattern_len)
+                    end_pattern_idx = start + num_patterns
+                    scores[doc_index, start:end_pattern_idx] = \
                         self.semiring.plus(
-                            scores[doc_index, start:start + num_patterns],
-                            hiddens[:, -1]  # mm(hidden, self.final)  # TODO: change if learning final state
-                        )
-            start += num_patterns
+                            scores[doc_index, start:end_pattern_idx],
+                            hiddens[start:end_pattern_idx, end_state]
+                        )  # mm(hidden, self.final)  # TODO: change if learning final state
+                    start += num_patterns
 
         if debug:
             time3 = monotonic()
@@ -359,8 +356,8 @@ class SoftPatternClassifier(Module):
     def get_self_loop_scale(self):
         return sigmoid(self.self_loop_scale)
 
-    def get_eps_value(self, pattern_length_index):
-        return mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilons[pattern_length_index]))
+    def get_eps_value(self):
+        return mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
 
     def transition_once(self,
                         eps_value,
@@ -403,12 +400,9 @@ class SoftPatternClassifier(Module):
 
     def transition_matrix(self, transition_probs, batch, word_index):
         result = transition_probs[batch.index_to_word[word_index], :]
-        # Transition probabilities for each pattern length.
-        return [
-            result[start:end].contiguous().view(num_patterns, self.num_diags, pattern_len)
-            for start, end, (pattern_len, num_patterns)
-            in zip(self.starts, self.ends, self.pattern_specs.items())
-        ]
+        return result.contiguous().view(
+            self.total_num_patterns, self.num_diags, self.max_pattern_length
+        )
 
     def predict(self, batch, debug=None):
         output = self.forward(batch, debug).data
