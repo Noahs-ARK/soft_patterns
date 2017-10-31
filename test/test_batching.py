@@ -46,23 +46,25 @@ class TestBatching(unittest.TestCase):
 
         batch_sizes = [1, 2, 4, 5, 10, 20]
 
-        results = []
-        for batch_size in batch_sizes:
-            batches = [
-                Batch(data[i:i + batch_size], embeddings, GPU)
-                for i in range(0, len(data), batch_size)
+        # for each batch size, chunk data into batches, run model.forward,
+        # then flatten results into a list (one NUM_CLASSESx1 vec per doc).
+        forward_results = [
+            [
+                fwd
+                for start_idx in range(0, len(data), batch_size)
+                for fwd in model.forward(Batch(data[start_idx:start_idx + batch_size],
+                                               embeddings,
+                                               GPU)).data
             ]
-            forwards = [
-                fwd.data
-                for batch in batches
-                for fwd in model.forward(batch)
-            ]
-            results.append(forwards)
+            for batch_size in batch_sizes
+        ]
 
-        for fwd in zip(*results):
-            for a, b in zip(fwd, fwd[1:]):
-                self.assertAlmostEqual(a[0], b[0], delta=0.05)
-                self.assertAlmostEqual(a[1], b[1], delta=0.05)
+        # transpose, so doc_forwards are all the diff batch sizes for a given doc
+        for doc_forwards in zip(*forward_results):
+            # make sure adjacent batch sizes predict the same probs
+            for a, b in zip(doc_forwards, doc_forwards[1:]):
+                for y in range(NUM_CLASSES):
+                    self.assertAlmostEqual(a[y], b[y], delta=0.05)
 
 
 if __name__ == "__main__":
