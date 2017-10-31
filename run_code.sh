@@ -9,10 +9,13 @@ mpf=''
 rs=''
 mps=''
 b=1
+clip=''
+clips=''
 gpu=''
 
+
 if [ "$#" -lt 4 ]; then
-	echo "Usage: $0 <Pattern spcification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gpu (optional)>"
+	echo "Usage: $0 <Pattern spcification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)>"
 	exit -1
 elif [ "$#" -gt 4 ]; then
 	r=$5
@@ -30,8 +33,12 @@ elif [ "$#" -gt 4 ]; then
 		if [ "$#" -gt 6 ]; then
 			b=$7
 			if [ "$#" -gt 7 ]; then
-				if [ $8 -eq 1 ]; then
-					gpu='-g'
+				clip="--clip $8"
+				clips="_clip$8"
+				if [ "$#" -gt 8 ]; then
+					if [ $9 -eq 1 ]; then
+						gpu='-g'
+					fi
 				fi
 			fi
 		fi
@@ -47,7 +54,7 @@ t=$4
 
 git_tag=`git log | head -1 | cut -d ' ' -f2`
 
-suffix=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${b}_$git_tag
+suffix=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${b}${clips}_$git_tag
 odir=~/work/soft_patterns/output_$suffix
 
 mkdir -p $odir
@@ -63,7 +70,7 @@ com="python -u soft_patterns.py        \
 	 -p $p \
 	-t $t \
 	-d $dim \
-	-l $lr $rf $mpf $gpu\
+	-l $lr $rf $mpf $clip $gpu\
 	-b $b"
 
 echo $com
