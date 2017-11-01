@@ -21,7 +21,13 @@ from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP
 
 
-# Running mode
+def chunked(xs, chunk_size):
+    """ Splits a list into `chunk_size`-sized pieces. """
+    xs = list(xs)
+    return [
+        xs[start_idx:start_idx + chunk_size]
+        for start_idx in range(0, len(xs), chunk_size)
+    ]
 
 
 def fixed_var(tensor, gpu=False):
@@ -224,20 +230,18 @@ class SoftPatternClassifier(Module):
         eps_value = self.get_eps_value()
         self_loop_scale = self.get_self_loop_scale()
 
-        batch_start = 0
         i = 0
-        while batch_start < len(dev_set):
+        for batch_idx, batch in enumerate(chunked(dev_set, batch_size)):
             if i % debug_print == (debug_print - 1):
                 print(".", end="", flush=True)
             i += 1
-            batch = dev_set[batch_start:batch_start + batch_size]
-            # print(len(batch))
             batch_obj = Batch([x for x, y in batch], self.embeddings, self.gpu)
 
             transition_matrices = self.get_transition_matrices(batch_obj)
 
             for d in range(batch_obj.size()):
                 doc = batch_obj.docs[d]
+                doc_idx = batch_idx * batch_size + d
                 for i in range(len(doc)):
                     start = 0
                     for k, (pattern_length, num_patterns) in enumerate(self.pattern_specs.items()):
@@ -259,12 +263,12 @@ class SoftPatternClassifier(Module):
                             scores = hiddens[:, -1]
 
                             for p in range(num_patterns):
-                                if scores[p].data[0] > max_scores[start + p, batch_start + d, 0].data[0]:
-                                    max_scores[start + p, batch_start + d, 0] = scores[p]
-                                    max_scores[start + p, batch_start + d, 1] = i
-                                    max_scores[start + p, batch_start + d, 2] = j + 1
+                                pattern_idx = start + p
+                                if scores[p].data[0] > max_scores[pattern_idx, doc_idx, 0].data[0]:
+                                    max_scores[pattern_idx, doc_idx, 0] = scores[p]
+                                    max_scores[pattern_idx, doc_idx, 1] = i
+                                    max_scores[pattern_idx, doc_idx, 2] = j + 1
                         start += num_patterns
-            batch_start += batch_size
         print()
         return max_scores
 
@@ -432,10 +436,9 @@ def compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, deb
 
 def evaluate_accuracy(model, data, batch_size, gpu, debug=None):
     n = float(len(data))
-    batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
     correct = 0
     num_1s = 0
-    for batch in batches:
+    for batch in chunked(data, batch_size):
         batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
         gold = [x[1] for x in batch]
         predicted = model.predict(batch_obj, debug)
@@ -481,10 +484,8 @@ def train(train_data,
         np.random.shuffle(train_data)
 
         loss = 0.0
-        batch_start = 0
         i = 0
-        while batch_start < len(train_data):
-            batch = train_data[batch_start:batch_start + batch_size]
+        for batch in chunked(train_data, batch_size):
             batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
             gold = [x[1] for x in batch]
             loss += torch.sum(
@@ -507,14 +508,11 @@ def train(train_data,
                                               i)
                     writer.add_scalar("loss/loss_train", loss, i)
 
-            batch_start += batch_size
             i += 1
 
         dev_loss = 0.0
-        batch_start = 0
         i = 0
-        while batch_start < len(dev_data):
-            batch = dev_data[batch_start:batch_start + batch_size]
+        for batch in chunked(dev_data, batch_size):
             batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
             gold = [x[1] for x in batch]
             dev_loss += torch.sum(compute_loss(model, batch_obj, num_classes, gold, loss_function, gpu, debug).data)
@@ -524,7 +522,6 @@ def train(train_data,
                 if writer is not None:
                     writer.add_scalar("loss/loss_dev", dev_loss, i)
 
-            batch_start += batch_size
             i += 1
 
         print("\n")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from soft_patterns import Batch, MaxPlusSemiring, SoftPatternClassifier, read_docs, read_embeddings
+from soft_patterns import Batch, MaxPlusSemiring, SoftPatternClassifier, read_docs, read_embeddings, chunked
 import unittest
 from collections import OrderedDict
 import numpy as np
@@ -50,9 +50,9 @@ class TestBatching(unittest.TestCase):
         matrices = [
             [
                 mat
-                for start_idx in range(0, len(self.data), batch_size)
+                for chunk in chunked(self.data, batch_size)
                 for mat in self.model.get_transition_matrices(
-                                        Batch(self.data[start_idx:start_idx + batch_size],
+                                        Batch(chunk,
                                               self.embeddings,
                                               GPU))
             ]
@@ -75,8 +75,8 @@ class TestBatching(unittest.TestCase):
         forward_results = [
             [
                 fwd
-                for start_idx in range(0, len(self.data), batch_size)
-                for fwd in self.model.forward(Batch(self.data[start_idx:start_idx + batch_size],
+                for chunk in chunked(self.data, batch_size)
+                for fwd in self.model.forward(Batch(chunk,
                                                     self.embeddings,
                                                     GPU)).data
             ]
