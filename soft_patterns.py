@@ -124,7 +124,7 @@ class SoftPatternClassifier(Module):
         self.word_dim = len(embeddings[0])
         self.num_diags = 2  # self-loops and single-forward-steps
         self.pattern_specs = pattern_specs
-        self.max_pattern_length = list(pattern_specs.keys())[-1]
+        self.max_pattern_length = max(list(pattern_specs.keys()))
 
         # Starting point for each pattern batch
         self.starts = []
