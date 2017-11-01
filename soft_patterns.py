@@ -10,7 +10,6 @@ import os
 import torch
 from torch import FloatTensor, LongTensor, cat, mm, mul, norm, randn, zeros, ones
 from torch.autograd import Variable
-from torch.functional import stack
 from torch.nn import Module, Parameter, NLLLoss
 from torch.nn.functional import sigmoid, log_softmax
 from torch.optim import Adam
@@ -18,7 +17,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from tensorboardX import SummaryWriter
 
-from data import read_embeddings, read_docs, read_labels, vocab_from_text
+from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP
 
 
@@ -79,22 +78,12 @@ MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, plus)
 
 
 class Batch:
-    def __init__(self, sentences, embeddings, gpu):
-        # print("s is", sentences)
-        self.docs = sentences
-        self.index_to_word = dict()
-        self.word_to_index = []
-        for sentence in sentences:
-            for word_index in sentence:
-                if word_index not in self.index_to_word:
-                    self.index_to_word[word_index] = len(self.word_to_index)
-                    self.word_to_index.append(word_index)
-
-        local_embeddings = [embeddings[index] for index in self.word_to_index]
+    def __init__(self, docs, embeddings, gpu):
+        """ Makes a smaller vocab of only words used in the given docs """
+        mini_vocab = Vocab.from_docs(docs, default=0)
+        self.docs = [mini_vocab.numberize(doc) for doc in docs]
+        local_embeddings = [embeddings[i] for i in mini_vocab.names]
         self.embeddings_matrix = fixed_var(FloatTensor(local_embeddings).t(), gpu)
-
-        if gpu:
-            self.embeddings_matrix.cuda()
 
     def size(self):
         return len(self.docs)
@@ -293,7 +282,9 @@ class SoftPatternClassifier(Module):
         # transition matrix for each document in batch
         transition_matrices = [
             [
-                self.transition_matrix(transition_probs, batch, word_index)
+                transition_probs[word_index, :].contiguous().view(
+                    self.total_num_patterns, self.num_diags, self.max_pattern_length
+                )
                 for word_index in doc
             ]
             for doc in batch.docs
@@ -351,7 +342,7 @@ class SoftPatternClassifier(Module):
         if debug:
             time3 = monotonic()
             print("MM: {}, other: {}".format(round(time2 - time1, 3), round(time3 - time2, 3)))
-        return self.mlp.forward(stack(scores, 1).t())
+        return self.mlp.forward(scores)
 
     def get_self_loop_scale(self):
         return sigmoid(self.self_loop_scale)
@@ -397,12 +388,6 @@ class SoftPatternClassifier(Module):
                 )
             )
         return result
-
-    def transition_matrix(self, transition_probs, batch, word_index):
-        result = transition_probs[batch.index_to_word[word_index], :]
-        return result.contiguous().view(
-            self.total_num_patterns, self.num_diags, self.max_pattern_length
-        )
 
     def predict(self, batch, debug=None):
         output = self.forward(batch, debug).data

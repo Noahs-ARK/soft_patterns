@@ -18,18 +18,18 @@ NUM_CLASSES = 2
 MLP_HIDDEN_DIM = 10
 SEMIRING = MaxPlusSemiring
 GPU = False
-DROPOUT = 0.2
+DROPOUT = 0.0
 LEGACY = False
 
 
 class TestBatching(unittest.TestCase):
-    def test_batching(self):
-        """ Test that different batch sizes yield same `forward` results """
+    def setUp(self):
         vocab, reverse_vocab, embeddings, word_dim = \
             read_embeddings(EMBEDDINGS_FILENAME)
-        data, _ = read_docs(DATA_FILENAME, vocab)
+        self.embeddings = embeddings
+        self.data = read_docs(DATA_FILENAME, vocab)[0]
         state_dict = torch.load(MODEL_FILENAME)
-        model = \
+        self.model = \
             SoftPatternClassifier(
                 PATTERN_SPECS,
                 MLP_HIDDEN_DIM,
@@ -42,21 +42,45 @@ class TestBatching(unittest.TestCase):
                 DROPOUT,
                 LEGACY
             )
-        model.load_state_dict(state_dict)
+        self.model.load_state_dict(state_dict)
+        self.batch_sizes = [1, 2, 4, 5, 10, 20]
 
-        batch_sizes = [1, 2, 4, 5, 10, 20]
+    def test_same_transition_matrices_for_diff_batches(self):
+        """ Test that different batch sizes yield same transition matrices """
+        matrices = [
+            [
+                mat
+                for start_idx in range(0, len(self.data), batch_size)
+                for mat in self.model.get_transition_matrices(
+                                        Batch(self.data[start_idx:start_idx + batch_size],
+                                              self.embeddings,
+                                              GPU))
+            ]
+            for batch_size in self.batch_sizes
+        ]
+        # transpose, so doc_matrices are all the diff batch sizes for a given doc
+        for doc_matrices in zip(*matrices):
+            # make sure adjacent batch sizes predict the same probs
+            for xs, ys in zip(doc_matrices, doc_matrices[1:]):
+                self.assertEqual(len(xs), len(ys))
+                for x, y in zip(xs, ys):
+                    for x2, y2 in zip(x.view(x.size()[0] * x.size()[1] * x.size()[2]).data,
+                                      y.view(x.size()[0] * x.size()[1] * x.size()[2]).data):
+                        self.assertAlmostEqual(x2, y2, places=4)
 
+    def test_same_forward_for_diff_batches(self):
+        """ Test that different batch sizes yield same `forward` results """
         # for each batch size, chunk data into batches, run model.forward,
         # then flatten results into a list (one NUM_CLASSESx1 vec per doc).
         forward_results = [
             [
                 fwd
-                for start_idx in range(0, len(data), batch_size)
-                for fwd in model.forward(Batch(data[start_idx:start_idx + batch_size],
-                                               embeddings,
-                                               GPU)).data
+                for start_idx in range(0, len(self.data), batch_size)
+                for fwd in self.model.forward(Batch(self.data[start_idx:start_idx + batch_size],
+                                                    self.embeddings,
+                                                    GPU)).data
             ]
-            for batch_size in batch_sizes
+            for batch_size in self.batch_sizes
         ]
 
         # transpose, so doc_forwards are all the diff batch sizes for a given doc

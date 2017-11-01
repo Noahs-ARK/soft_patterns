@@ -3,7 +3,36 @@ import string
 
 import numpy as np
 
-UNK_TOKEN="*UNK*"
+
+UNK_TOKEN = "*UNK*"
+
+
+class Vocab:
+    def __init__(self, names, default=UNK_TOKEN):
+        self.default = default
+        self.names = [self.default] + list(set(names) - set([self.default]))
+        self.index = {name: i for i, name in enumerate(self.names)}
+
+    def __getitem__(self, index):
+        """ Lookup name given index. """
+        return self.names[index] if 0 < index < len(self.names) else self.default
+
+    def __call__(self, name):
+        """ Lookup index given name. """
+        return self.index.get(name, 0)
+
+    def numberize(self, doc):
+        """ Replace each name in doc with its index. """
+        return [self(token) for token in doc]
+
+    def denumberize(self, doc):
+        """ Replace each index in doc with its name. """
+        return [self[idx] for idx in doc]
+
+    @staticmethod
+    def from_docs(docs, default=UNK_TOKEN):
+        return Vocab((i for doc in docs for i in doc), default=default)
+
 
 def read_embeddings(filename, train_vocab=None):
     vocab = {UNK_TOKEN:  0}

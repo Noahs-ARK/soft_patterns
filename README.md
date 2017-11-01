@@ -28,4 +28,4 @@ I also had set the following env var on Mac:
 
 ## Running Tests
 
-    python -m unittest test.forward_one_sent
+    python -m unittest
