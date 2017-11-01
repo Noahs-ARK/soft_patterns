@@ -8,7 +8,7 @@ from time import monotonic
 import numpy as np
 import os
 import torch
-from torch import FloatTensor, LongTensor, cat, mm, mul, norm, randn, zeros, ones
+from torch import FloatTensor, LongTensor, cat, mm, norm, randn, zeros, ones
 from torch.autograd import Variable
 from torch.nn import Module, Parameter, NLLLoss
 from torch.nn.functional import sigmoid, log_softmax
@@ -44,9 +44,7 @@ def argmax(output):
 
 
 def get_nearest_neighbors(w, embeddings):
-    # print(w.size(), embeddings.size())
     dot_products = mm(w, embeddings[:1000, :])
-
     return argmax(dot_products)
 
 
@@ -61,15 +59,17 @@ class Semiring:
                  zero,
                  one,
                  plus,
-                 times):
+                 times,
+                 from_float):
         self.zero = zero
         self.one = one
         self.plus = plus
         self.times = times
+        self.from_float = from_float
 
 
-def plus(x, y):
-    return x + y
+def identity(x):
+    return x
 
 
 def neg_infinity(*sizes):
@@ -77,10 +77,10 @@ def neg_infinity(*sizes):
 
 
 # element-wise plus, times
-ProbSemiring = Semiring(zeros, ones, plus, mul)
+ProbSemiring = Semiring(zeros, ones, torch.add, torch.mul, sigmoid)
 
 # element-wise max, plus
-MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, plus)
+MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity)
 
 
 class Batch:
@@ -164,8 +164,8 @@ class SoftPatternClassifier(Module):
         self.epsilon = Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1).type(self.dtype))
 
         # TODO: learned? hyperparameter?
-        self.epsilon_scale = fixed_var(FloatTensor([.5]).type(self.dtype))
-        self.self_loop_scale = fixed_var(FloatTensor([.5]).type(self.dtype))
+        self.epsilon_scale = fixed_var(FloatTensor([0]).type(self.dtype))
+        self.self_loop_scale = fixed_var(FloatTensor([0]).type(self.dtype))
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def visualize_pattern(self, batch_size, dev_set=None, dev_text=None, n_top_scoring=5):
@@ -275,7 +275,7 @@ class SoftPatternClassifier(Module):
     def get_transition_matrices(self, batch):
         mm_res = mm(self.diags, batch.embeddings_matrix)
         transition_probs = \
-            sigmoid(mm_res + self.bias.expand(self.bias.size()[0], mm_res.size()[1])).t()
+            self.semiring.from_float(mm_res + self.bias.expand(self.bias.size()[0], mm_res.size()[1])).t()
 
         if self.gpu:
             transition_probs = transition_probs.cuda()
@@ -311,7 +311,11 @@ class SoftPatternClassifier(Module):
 
         zero_padding = fixed_var(self.semiring.zero(self.total_num_patterns, 1), self.gpu)
 
-        eps_value = mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
+        eps_value = \
+            self.semiring.times(
+                self.semiring.from_float(self.epsilon_scale),
+                self.semiring.from_float(self.epsilon)
+            )
         self_loop_scale = self.get_self_loop_scale()
 
         # Different documents in batch
@@ -345,10 +349,13 @@ class SoftPatternClassifier(Module):
         return self.mlp.forward(scores)
 
     def get_self_loop_scale(self):
-        return sigmoid(self.self_loop_scale)
+        return self.semiring.from_float(self.self_loop_scale)
 
     def get_eps_value(self):
-        return mul(sigmoid(self.epsilon_scale), sigmoid(self.epsilon))
+        return self.semiring.times(
+            self.semiring.from_float(self.epsilon_scale),
+            self.semiring.from_float(self.epsilon)
+        )
 
     def transition_once(self,
                         eps_value,
@@ -379,7 +386,7 @@ class SoftPatternClassifier(Module):
         result = \
             self.semiring.plus(
                 result,
-                mul(
+                self.semiring.times(
                     self_loop_scale,
                     self.semiring.times(
                         hiddens,
@@ -606,7 +613,7 @@ def main(args):
         dev_data = dev_data[:n]
 
     dropout = None if args.td is None else args.dropout
-    semiring = MaxPlusSemiring if args.maxplus is None else ProbSemiring
+    semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
 
     model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
@@ -682,6 +689,8 @@ if __name__ == '__main__':
     parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
     parser.add_argument("--clip", help="Gradient clipping", type=float, default=None)
     parser.add_argument("--debug", help="Debug", action='store_true')
-    parser.add_argument("--maxplus", help="Use max-plus semiring instead of plus-times", action='store_true')
+    parser.add_argument("--maxplus",
+                        help="Use max-plus semiring instead of plus-times",
+                        default=False, action='store_true')
 
     sys.exit(main(parser.parse_args()))
