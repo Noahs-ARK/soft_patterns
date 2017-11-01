@@ -302,14 +302,7 @@ class SoftPatternClassifier(Module):
 
         scores = Variable(self.semiring.zero(batch.size(), self.total_num_patterns).type(self.dtype))
 
-        start = 0
-
-        hiddens = Variable(self.semiring.zero(self.total_num_patterns, self.max_pattern_length).type(self.dtype))
-
-        # Start state
-        hiddens[:, 0] = self.semiring.one(self.total_num_patterns, 1).type(self.dtype)
-
-        # adding start for each word in the document.
+        # to add start state for each word in the document.
         restart_padding = fixed_var(self.semiring.one(self.total_num_patterns, 1), self.gpu)
 
         zero_padding = fixed_var(self.semiring.zero(self.total_num_patterns, 1), self.gpu)
@@ -319,6 +312,9 @@ class SoftPatternClassifier(Module):
 
         # Different documents in batch
         for doc_index in range(len(transition_matrices)):
+            # Start state
+            hiddens = Variable(self.semiring.zero(self.total_num_patterns, self.max_pattern_length).type(self.dtype))
+            hiddens[:, 0] = self.semiring.one(self.total_num_patterns, 1).type(self.dtype)
             # For each token in document
             for transition_matrix_val in transition_matrices[doc_index]:
                 hiddens = self.transition_once(eps_value,

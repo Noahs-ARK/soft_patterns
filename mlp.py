@@ -33,8 +33,6 @@ class MLP(Module):
         else:
             self.layers = ModuleList(layers)
 
-
-
     def forward(self, x):
         if self.legacy and self.num_layers == 2:
             return self.layer2(relu(self.layer1(x)))

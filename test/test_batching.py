@@ -61,9 +61,9 @@ class TestBatching(unittest.TestCase):
         # transpose, so doc_matrices are all the diff batch sizes for a given doc
         for doc_matrices in zip(*matrices):
             # make sure adjacent batch sizes predict the same probs
-            for xs, ys in zip(doc_matrices, doc_matrices[1:]):
-                self.assertEqual(len(xs), len(ys))
-                for x, y in zip(xs, ys):
+            for batch_size_a, batch_size_b in zip(doc_matrices, doc_matrices[1:]):
+                self.assertEqual(len(batch_size_a), len(batch_size_b))
+                for x, y in zip(batch_size_a, batch_size_b):
                     for x2, y2 in zip(x.view(x.size()[0] * x.size()[1] * x.size()[2]).data,
                                       y.view(x.size()[0] * x.size()[1] * x.size()[2]).data):
                         self.assertAlmostEqual(x2, y2, places=4)
@@ -86,9 +86,9 @@ class TestBatching(unittest.TestCase):
         # transpose, so doc_forwards are all the diff batch sizes for a given doc
         for doc_forwards in zip(*forward_results):
             # make sure adjacent batch sizes predict the same probs
-            for a, b in zip(doc_forwards, doc_forwards[1:]):
+            for batch_size_a, batch_size_b in zip(doc_forwards, doc_forwards[1:]):
                 for y in range(NUM_CLASSES):
-                    self.assertAlmostEqual(a[y], b[y], delta=0.05)
+                    self.assertAlmostEqual(batch_size_a[y], batch_size_b[y], places=4)
 
 
 if __name__ == "__main__":
