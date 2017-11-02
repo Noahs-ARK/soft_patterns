@@ -120,21 +120,17 @@ class SoftPatternClassifier(Module):
         self.pattern_specs = pattern_specs
         self.max_pattern_length = max(list(pattern_specs.keys()))
 
-        # Starting point for each pattern batch
-        self.starts = []
+        # end state index for each pattern
+        end_states = [
+            [end]
+            for pattern_len, num_patterns in self.pattern_specs.items()
+            for end in num_patterns * [pattern_len - 1]
+        ]
+        self.end_states = fixed_var(LongTensor(end_states))
+        if self.gpu:
+            self.end_states = self.end_states.cuda()
 
-        # Ending point for each pattern batch
-        self.ends = []
-
-        # Total number of rows in diagonal data matrix
-        current_diag_data_idx = 0
-
-        for num_patterns in self.pattern_specs.values():
-            self.starts.append(current_diag_data_idx)
-            current_diag_data_idx += self.max_pattern_length * self.num_diags * num_patterns
-            self.ends.append(current_diag_data_idx)
-
-        diag_data_size = current_diag_data_idx
+        diag_data_size = self.max_pattern_length * self.num_diags * self.total_num_patterns
 
         diag_data = randn(diag_data_size, self.word_dim).type(self.dtype)
         normalize(diag_data)
@@ -319,17 +315,13 @@ class SoftPatternClassifier(Module):
                                                transition_matrix_val,
                                                zero_padding,
                                                restart_padding)
-                # Score is the final column of hiddens
-                start = 0
-                for pattern_len, num_patterns in self.pattern_specs.items():
-                    end_state = -1 - (self.max_pattern_length - pattern_len)
-                    end_pattern_idx = start + num_patterns
-                    scores[doc_index, start:end_pattern_idx] = \
-                        self.semiring.plus(
-                            scores[doc_index, start:end_pattern_idx],
-                            hiddens[start:end_pattern_idx, end_state]
-                        )  # mm(hidden, self.final)  # TODO: change if learning final state
-                    start += num_patterns
+                # Look at the end state for each pattern, and "add" it into score
+                end_state_vals = torch.gather(hiddens, 1, self.end_states)
+                scores[doc_index, :] = \
+                    self.semiring.plus(
+                        scores[doc_index, :],
+                        end_state_vals.view(self.total_num_patterns)
+                    )
 
         if debug:
             time3 = monotonic()

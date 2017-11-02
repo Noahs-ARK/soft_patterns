@@ -1,25 +1,15 @@
 #!/usr/bin/env python
 
-from soft_patterns import Batch, MaxPlusSemiring, SoftPatternClassifier, read_docs, read_embeddings, chunked
+from soft_patterns import Batch, SoftPatternClassifier, read_docs, read_embeddings, chunked
 import unittest
-from collections import OrderedDict
 import numpy as np
 import torch
 
+from test.settings import EMBEDDINGS_FILENAME, DATA_FILENAME, MODEL_FILENAME, PATTERN_SPECS, MLP_HIDDEN_DIM, \
+    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, DROPOUT, LEGACY
+
 torch.manual_seed(100)
 np.random.seed(100)
-
-DATA_FILENAME = 'test/data/train.20examples.data'
-EMBEDDINGS_FILENAME = 'test/data/glove.6B.50d.20words.txt'
-MODEL_FILENAME = 'test/data/model.pth'
-PATTERN_SPECS = OrderedDict([int(y) for y in x.split(":")] for x in "5:50".split(","))
-NUM_MLP_LAYERS = 2
-NUM_CLASSES = 2
-MLP_HIDDEN_DIM = 10
-SEMIRING = MaxPlusSemiring
-GPU = False
-DROPOUT = 0.0
-LEGACY = False
 
 
 class TestBatching(unittest.TestCase):
