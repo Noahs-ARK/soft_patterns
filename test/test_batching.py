@@ -24,8 +24,7 @@ LEGACY = False
 
 class TestBatching(unittest.TestCase):
     def setUp(self):
-        vocab, reverse_vocab, embeddings, word_dim = \
-            read_embeddings(EMBEDDINGS_FILENAME)
+        vocab, embeddings, word_dim = read_embeddings(EMBEDDINGS_FILENAME)
         self.embeddings = embeddings
         self.data = read_docs(DATA_FILENAME, vocab)[0]
         state_dict = torch.load(MODEL_FILENAME)
@@ -36,7 +35,7 @@ class TestBatching(unittest.TestCase):
                 NUM_MLP_LAYERS,
                 NUM_CLASSES,
                 embeddings,
-                reverse_vocab,
+                vocab,
                 SEMIRING,
                 GPU,
                 DROPOUT,

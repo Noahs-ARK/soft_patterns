@@ -26,11 +26,9 @@ class DanClassifier(Module):
                  num_mlp_layers,
                  num_classes,
                  embeddings,
-                 vocab,
                  gpu=False,
                  dropout=0.1):
         super(DanClassifier, self).__init__()
-        self.vocab = vocab
         self.embeddings = fixed_var(FloatTensor(embeddings), gpu)
         self.word_dim = len(embeddings[0])
         self.dtype = FloatTensor
@@ -77,11 +75,13 @@ def main(args):
         np.random.seed(args.seed)
 
     dev_vocab = vocab_from_text(args.vd)
+    print("Dev vocab:", len(dev_vocab))
     if args.td is not None:
         train_vocab = vocab_from_text(args.td)
+        print("Train vocab:", len(train_vocab))
         dev_vocab |= train_vocab
 
-    vocab, reverse_vocab, embeddings, word_dim = \
+    vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
     dev_input, dev_text = read_docs(args.vd, vocab)
@@ -118,7 +118,6 @@ def main(args):
                           num_mlp_layers,
                           num_classes,
                           embeddings,
-                          reverse_vocab,
                           args.gpu,
                           dropout)
 

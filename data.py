@@ -1,16 +1,28 @@
 """ Reading in data files """
+from itertools import chain, islice
 import string
-
 import numpy as np
+from util import nub
 
-
+PRINTABLE = set(string.printable)
 UNK_TOKEN = "*UNK*"
 
 
+def is_printable(word):
+    return all(c in PRINTABLE for c in word)
+
+
 class Vocab:
-    def __init__(self, names, default=UNK_TOKEN):
+    """
+    A bimap from name to index.
+    Use `vocab[i]` to lookup name for `i`,
+    and `vocab(n)` to lookup index for `n`.
+    """
+    def __init__(self,
+                 names,
+                 default=UNK_TOKEN):
         self.default = default
-        self.names = [self.default] + list(set(names) - set([self.default]))
+        self.names = list(nub(chain([default], names)))
         self.index = {name: i for i, name in enumerate(self.names)}
 
     def __getitem__(self, index):
@@ -20,6 +32,15 @@ class Vocab:
     def __call__(self, name):
         """ Lookup index given name. """
         return self.index.get(name, 0)
+
+    def __contains__(self, item):
+        return item in self.index
+
+    def __len__(self):
+        return len(self.names)
+
+    def __or__(self, other):
+        return Vocab(self.names + other.names)
 
     def numberize(self, doc):
         """ Replace each name in doc with its index. """
@@ -34,68 +55,46 @@ class Vocab:
         return Vocab((i for doc in docs for i in doc), default=default)
 
 
-def read_embeddings(filename, train_vocab=None):
-    vocab = {UNK_TOKEN:  0}
-
-    vecs = []
-    printable = set(string.printable)
-
+def read_embeddings(filename,
+                    fixed_vocab=None,
+                    max_vocab_size=None):
     print("Reading", filename)
+    dim, has_header = check_dim_and_header(filename)
+    unk_vec = np.zeros(dim)  # TODO: something better?
     with open(filename, encoding='utf-8') as input_file:
-        first_line = input_file.readline()
+        if has_header:
+            input_file.readline()  # skip over header
+        word_vecs = (
+            (word, np.fromstring(vec_str, dtype=float, sep=' '))
+            for word, vec_str in (
+                line.rstrip().split(" ", 1)
+                for line in input_file
+            )
+            if is_printable(word) and (fixed_vocab is None or word in fixed_vocab)
+        )
+        if max_vocab_size is not None:
+            word_vecs = islice(word_vecs, max_vocab_size - 1)
+        word_vecs = list(word_vecs)
 
-        e = first_line.rstrip().split()
+    print("Done reading", len(word_vecs), "vectors of dimension", dim)
+    vocab = Vocab((word for word, _ in word_vecs))
+    vecs = [unk_vec] + [vec / np.linalg.norm(vec) for _, vec in word_vecs]
+    return vocab, vecs, dim
 
-        # Header line
-        if len(e) == 2:
-            dim = int(e[1])
-            vecs.append(np.zeros(dim))  # UNK embedding (at idx 0) is all zeros
+
+def check_dim_and_header(filename):
+    with open(filename, encoding='utf-8') as input_file:
+        first_line = input_file.readline().rstrip().split()
+        if len(first_line) == 2:
+            return int(first_line[1]), True
         else:
-            dim = len(e) - 1
-            vecs.append(np.zeros(dim))
-            e = first_line.rstrip().split(" ", 1)
-            add_vec(e, vecs, vocab, train_vocab)
-
-        for line in input_file:
-            e = line.rstrip().split(" ", 1)
-            word = e[0]
-
-            # TODO: this is for debugging only
-            # if len(vocab) == 5000:
-            #     break
-
-            good = 1
-            for i in list(word):
-                if i not in printable:
-                    good = 0
-                    break
-
-            if not good:
-                # print(n,"is not good")
-                continue
-
-            add_vec(e, vecs, vocab, train_vocab)
-
-    print("Done reading", len(vecs), "vectors of dimension", dim)
-    reverse_vocab = {
-        i: name for name, i in vocab.items()
-    }
-    return vocab, reverse_vocab, vecs, dim
-
-
-def add_vec(v, vecs, vocab, train_vocab=None):
-    w = v[0]
-    if train_vocab is not None and w not in train_vocab:
-        return
-    vocab[w] = len(vocab)
-    vec = np.fromstring(v[1], dtype=float, sep=' ')
-    vecs.append(vec / np.linalg.norm(vec))
+            return len(first_line) - 1, False
 
 
 def read_docs(filename, vocab):
     with open(filename, encoding='utf-8') as input_file:
-        train_words = [line.rstrip().split() for line in input_file]
-        return [[vocab[w] if w in vocab else 0 for w in doc] for doc in train_words], train_words
+        docs = [line.rstrip().split() for line in input_file]
+        return [vocab.numberize(doc) for doc in docs], docs
 
 
 def read_labels(filename):
@@ -104,12 +103,5 @@ def read_labels(filename):
 
 
 def vocab_from_text(filename):
-    vocab = set()
     with open(filename, encoding='utf-8') as input_file:
-        for line in input_file:
-            train_words = set(line.rstrip().split())
-
-            vocab |= train_words
-
-    print("Vocab from text", len(vocab))
-    return vocab
+        return Vocab.from_docs(line.rstrip().split() for line in input_file)

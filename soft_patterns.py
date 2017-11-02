@@ -19,15 +19,7 @@ from tensorboardX import SummaryWriter
 
 from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP
-
-
-def chunked(xs, chunk_size):
-    """ Splits a list into `chunk_size`-sized pieces. """
-    xs = list(xs)
-    return [
-        xs[start_idx:start_idx + chunk_size]
-        for start_idx in range(0, len(xs), chunk_size)
-    ]
+from util import chunked, identity
 
 
 def fixed_var(tensor, gpu=False):
@@ -66,10 +58,6 @@ class Semiring:
         self.plus = plus
         self.times = times
         self.from_float = from_float
-
-
-def identity(x):
-    return x
 
 
 def neg_infinity(*sizes):
@@ -572,11 +560,13 @@ def main(args):
         np.random.seed(args.seed)
 
     dev_vocab = vocab_from_text(args.vd)
+    print("Dev vocab:", len(dev_vocab))
     if args.td is not None:
         train_vocab = vocab_from_text(args.td)
+        print("Train vocab:", len(train_vocab))
         dev_vocab |= train_vocab
 
-    vocab, reverse_vocab, embeddings, word_dim = \
+    vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
     dev_input, dev_text = read_docs(args.vd, vocab)
@@ -620,7 +610,7 @@ def main(args):
                                   num_mlp_layers,
                                   num_classes,
                                   embeddings,
-                                  reverse_vocab,
+                                  vocab,
                                   semiring,
                                   args.gpu,
                                   dropout,
