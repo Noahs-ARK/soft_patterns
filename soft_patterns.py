@@ -77,16 +77,14 @@ class Batch:
         mini_vocab = Vocab.from_docs(docs, default=0, pad_token=1)
         self._max_doc_size = np.max([len(doc) for doc in docs])
         self.docs = [mini_vocab.numberize(doc) for doc in docs]
-
         self.pad_docs()
 
         local_embeddings = [embeddings[i] for i in mini_vocab.names]
         self.embeddings_matrix = fixed_var(FloatTensor(local_embeddings).t(), gpu)
 
     def pad_docs(self):
-        for doc in self.docs():
-            while len(doc) < self.max_doc_size():
-                doc.append(1)
+        for i in range(self.size()):
+            self.docs[i] += [1] * (self.max_doc_size() - len(self.docs[i]))
 
 
     def size(self):
@@ -133,21 +131,17 @@ class SoftPatternClassifier(Module):
         self.pattern_specs = pattern_specs
         self.max_pattern_length = max(list(pattern_specs.keys()))
 
-        # Starting point for each pattern batch
-        self.starts = []
+        # end state index for each pattern
+        end_states = [
+            [end]
+            for pattern_len, num_patterns in self.pattern_specs.items()
+            for end in num_patterns * [pattern_len - 1]
+        ]
+        self.end_states = fixed_var(LongTensor(end_states))
+        if self.gpu:
+            self.end_states = self.end_states.cuda()
 
-        # Ending point for each pattern batch
-        self.ends = []
-
-        # Total number of rows in diagonal data matrix
-        current_diag_data_idx = 0
-
-        for num_patterns in self.pattern_specs.values():
-            self.starts.append(current_diag_data_idx)
-            current_diag_data_idx += self.max_pattern_length * self.num_diags * num_patterns
-            self.ends.append(current_diag_data_idx)
-
-        diag_data_size = current_diag_data_idx
+        diag_data_size = self.max_pattern_length * self.num_diags * self.total_num_patterns
 
         diag_data = randn(diag_data_size, self.word_dim).type(self.dtype)
         normalize(diag_data)
@@ -275,25 +269,28 @@ class SoftPatternClassifier(Module):
 
     def get_transition_matrices(self, batch):
         mm_res = mm(self.diags, batch.embeddings_matrix)
-        transition_probs = \
+        transition_scores = \
             self.semiring.from_float(mm_res + self.bias.expand(self.bias.size()[0], mm_res.size()[1])).t()
 
         if self.gpu:
-            transition_probs = transition_probs.cuda()
+            transition_scores = transition_scores.cuda()
 
         if self.dropout:
-            transition_probs = self.dropout(transition_probs)
+            transition_scores = self.dropout(transition_scores)
+
+        batched_transition_scores = [
+            torch.index_select(transition_scores, 0, Variable(torch.LongTensor(doc))) for doc in batch.docs
+        ]
+
+        batched_transition_scores = torch.cat(batched_transition_scores).view(
+            batch.size(), int(batch.max_doc_size()), self.total_num_patterns, self.num_diags, self.max_pattern_length)
 
         # transition matrix for each document in batch
         transition_matrices = [
-            [
-                transition_probs[word_index, :].contiguous().view(
-                    self.total_num_patterns, self.num_diags, self.max_pattern_length
-                )
-                for word_index in doc
-            ]
-            for doc in batch.docs
+            batched_transition_scores[:, word_index, :, :, :]
+            for word_index in range(batch.max_doc_size())
         ]
+
         return transition_matrices
 
     def forward(self, batch, debug=None):
@@ -320,33 +317,30 @@ class SoftPatternClassifier(Module):
 
         eps_value = eps_value.expand(batch.size(), eps_value.size()[0], eps_value.size()[1])
         self_loop_scale = self.get_self_loop_scale()
-
+        end_state_local = self.end_states.expand(batch.size(), self.total_num_patterns, 1)
         # Different documents in batch
         hiddens = Variable(self.semiring.zero(batch.size(), self.total_num_patterns, self.max_pattern_length).type(self.dtype))
-        hiddens[:, 0] = self.semiring.one(batch.size(), self.total_num_patterns, 1).type(self.dtype)
+        hiddens[:, :, 0] = self.semiring.one(batch.size(), self.total_num_patterns, 1).type(self.dtype)
             # Start state
             # For each token in document
 
-        batch_length = 20
-        for i in range (batch_length):
-            transition_matrix_val = transition_matrices[:, i]
+        for i in range (batch.max_doc_size()):
+            transition_matrix_val = transition_matrices[i]
             hiddens = self.transition_once(eps_value,
                                            hiddens,
                                            self_loop_scale,
                                            transition_matrix_val,
                                            zero_padding,
                                            restart_padding)
-            # Score is the final column of hiddens
-                start = 0
-                for pattern_len, num_patterns in self.pattern_specs.items():
-                    end_state = -1 - (self.max_pattern_length - pattern_len)
-                    end_pattern_idx = start + num_patterns
-                    scores[doc_index, start:end_pattern_idx] = \
-                        self.semiring.plus(
-                            scores[doc_index, start:end_pattern_idx],
-                            hiddens[start:end_pattern_idx, end_state]
-                        )  # mm(hidden, self.final)  # TODO: change if learning final state
-                    start += num_patterns
+
+            # Look at the end state for each pattern, and "add" it into score
+            end_state_vals = torch.gather(hiddens, 2, end_state_local).view(scores.size()[0], scores.size()[1])
+            # print(end_state_vals.size(), scores.size())
+            scores = \
+                self.semiring.plus(
+                    scores,
+                    end_state_vals
+                )
 
         if debug:
             time3 = monotonic()
@@ -379,14 +373,14 @@ class SoftPatternClassifier(Module):
                      self.semiring.times(
                          hiddens[:, :, :-1],
                          eps_value  # doesn't depend on token, just state
-                     )), 1))
+                     )), 2))
         # single steps forward (consume a token, move forward one state)
         result = \
             cat((restart_padding,  # <- Adding the start state
                  self.semiring.times(
-                     hiddens[:, :, -1],
-                     transition_matrix_val[:, , 1, :-1])
-                 ), 1)
+                     hiddens[:, :, -1].contiguous().view(hiddens.size()[0], hiddens.size()[1], 1),
+                     transition_matrix_val[:, :, 1, :-1])
+                 ), 2)
         # Adding self loops (consume a token, stay in same state)
         result = \
             self.semiring.plus(
