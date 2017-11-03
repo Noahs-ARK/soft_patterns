@@ -77,14 +77,21 @@ class Batch:
         mini_vocab = Vocab.from_docs(docs, default=0, pad_token=1)
         self._max_doc_size = np.max([len(doc) for doc in docs])
         self.docs = [mini_vocab.numberize(doc) for doc in docs]
-        self.pad_docs()
+        self.pad_docs(gpu)
 
         local_embeddings = [embeddings[i] for i in mini_vocab.names]
         self.embeddings_matrix = fixed_var(FloatTensor(local_embeddings).t(), gpu)
 
-    def pad_docs(self):
+    def pad_docs(self, gpu):
+        """Pad each document, and turn it into a variable"""
         for i in range(self.size()):
             self.docs[i] += [1] * (self.max_doc_size() - len(self.docs[i]))
+            doc_trensor = torch.LongTensor(self.docs[i])
+            if gpu:
+                doc_trensor = doc_trensor.cuda()
+            self.docs[i] = Variable(doc_trensor)
+
+
 
 
     def size(self):
@@ -279,7 +286,7 @@ class SoftPatternClassifier(Module):
             transition_scores = self.dropout(transition_scores)
 
         batched_transition_scores = [
-            torch.index_select(transition_scores, 0, Variable(torch.LongTensor(doc))) for doc in batch.docs
+            torch.index_select(transition_scores, 0, doc) for doc in batch.docs
         ]
 
         batched_transition_scores = torch.cat(batched_transition_scores).view(
