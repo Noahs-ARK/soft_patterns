@@ -77,7 +77,7 @@ class TestBatching(unittest.TestCase):
             # make sure adjacent batch sizes predict the same probs
             for batch_size_a, batch_size_b in zip(doc_forwards, doc_forwards[1:]):
                 for y in range(NUM_CLASSES):
-                        self.assertAlmostEqual(batch_size_a[y], batch_size_b[y], places=4)
+                    self.assertAlmostEqual(batch_size_a[y], batch_size_b[y], places=4)
 
 
 if __name__ == "__main__":

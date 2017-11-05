@@ -2,7 +2,7 @@
 
 import unittest
 
-from data import Vocab, read_embeddings, UNK_TOKEN
+from data import Vocab, read_embeddings, UNK_TOKEN, PAD_TOKEN
 
 EMBEDDINGS_FILENAME = 'test/data/glove.6B.50d.20words.txt'
 
@@ -10,16 +10,18 @@ EMBEDDINGS_FILENAME = 'test/data/glove.6B.50d.20words.txt'
 class TestVocab(unittest.TestCase):
     def test_read_embeddings(self):
         """ Tests that `data.read_embeddings` works for a small file """
-        vocab, vecs, dim = read_embeddings(EMBEDDINGS_FILENAME, max_vocab_size=3)
-        self.assertEqual(len(vocab), 3)
+        max_vocab_size = 4
+        vocab, vecs, dim = read_embeddings(EMBEDDINGS_FILENAME, max_vocab_size=max_vocab_size)
+        self.assertEqual(len(vocab), max_vocab_size)
         self.assertEqual(dim, 50)
         self.assertEqual(vocab(UNK_TOKEN), 0)
-        self.assertEqual(vocab("the"), 1)
-        self.assertEqual(vocab(","), 2)
-        self.assertEqual(
+        self.assertEqual(vocab(PAD_TOKEN), 1)
+        self.assertEqual(vocab("the"), 2)
+        self.assertEqual(vocab(","), 3)
+        self.assertAlmostEqualList(
             list(vecs[vocab("the")])[:10],
             [
-                0.084141417971733884,
+                0.0841414179717338836,
                 0.050259400093738082,
                 -0.08301819043038873,
                 0.024497632935789507,
@@ -30,8 +32,8 @@ class TestVocab(unittest.TestCase):
                 -0.00013290116839109539,
                 -0.13217046660344609
             ]
-        )
-        self.assertEqual(
+        , 7)
+        self.assertAlmostEqualList(
             list(vecs[vocab(",")])[:10],
             [
                 0.0030016593815816841,
@@ -45,7 +47,7 @@ class TestVocab(unittest.TestCase):
                 -0.081288893303752177,
                 -0.05345861340398955
             ]
-        )
+        , 7)
 
     def test_denumberize_numberize(self):
         """ Tests that `denumberize` is left inverse of `numberize` """
@@ -66,6 +68,11 @@ class TestVocab(unittest.TestCase):
             v = Vocab.from_docs(fixture)
             for doc in fixture:
                 self.assertEqual(v.denumberize(v.numberize(doc)), doc)
+
+    def assertAlmostEqualList(self, first, second, places=None, msg=None,
+                          delta=None):
+        for i, j in zip(first, second):
+            self.assertAlmostEqual(i, j, places, msg, delta)
 
 
 if __name__ == "__main__":

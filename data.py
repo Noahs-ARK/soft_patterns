@@ -77,12 +77,14 @@ def read_embeddings(filename,
             if is_printable(word) and (fixed_vocab is None or word in fixed_vocab)
         )
         if max_vocab_size is not None:
-            word_vecs = islice(word_vecs, max_vocab_size - 1)
+            word_vecs = islice(word_vecs, max_vocab_size - 2)
         word_vecs = list(word_vecs)
 
     print("Done reading", len(word_vecs), "vectors of dimension", dim)
     vocab = Vocab((word for word, _ in word_vecs))
+
     vecs = [unk_vec] + [pad_vec] + [vec / np.linalg.norm(vec) for _, vec in word_vecs]
+
     return vocab, vecs, dim
 
 
