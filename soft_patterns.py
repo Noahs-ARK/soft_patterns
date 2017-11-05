@@ -273,9 +273,8 @@ class SoftPatternClassifier(Module):
 
     def get_transition_matrices(self, batch):
         mm_res = mm(self.diags, batch.embeddings_matrix)
-        # TODO: I think expand here is redundant
         transition_scores = \
-            self.semiring.from_float(mm_res + self.bias.expand(self.bias.size()[0], mm_res.size()[1])).t()
+            self.semiring.from_float(mm_res + self.bias).t()
 
         if self.gpu:
             transition_scores = transition_scores.cuda()
@@ -320,8 +319,6 @@ class SoftPatternClassifier(Module):
                 self.semiring.from_float(self.epsilon)
             )
 
-        # Todo: I think expand here is redundant
-        eps_value = eps_value.expand(batch.size(), eps_value.size()[0], eps_value.size()[1])
         self_loop_scale = self.get_self_loop_scale()
         end_state_local = self.end_states.expand(batch.size(), self.total_num_patterns, 1)
         # Different documents in batch
