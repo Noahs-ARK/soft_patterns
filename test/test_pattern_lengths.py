@@ -157,7 +157,7 @@ class TestPatternLengths(unittest.TestCase):
         """
         test_data = [self.data[0]]
         batch = Batch(test_data, self.embeddings, GPU)
-        batch2 = soft_patterns.Batch(test_  data, self.embeddings, GPU)
+        batch2 = soft_patterns.Batch(test_data, self.embeddings, GPU)
         print(batch.size(), batch2.size())
         expected = forward(self.model, batch).data
         actual = self.model.forward(batch2).data
