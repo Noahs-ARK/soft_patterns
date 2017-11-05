@@ -39,11 +39,14 @@ def forward(model, batch):
         )
     self_loop_scale = model.get_self_loop_scale()
 
+    all_hiddens = []
+
     # Different documents in batch
     for doc_index in range(len(transition_matrices)):
         # Start state
         hiddens = Variable(model.semiring.zero(model.total_num_patterns, model.max_pattern_length).type(model.dtype))
         hiddens[:, 0] = model.semiring.one(model.total_num_patterns, 1).type(model.dtype)
+        all_hiddens.append(hiddens)
         # For each token in document
         for transition_matrix_val in transition_matrices[doc_index]:
             hiddens = transition_once(model, eps_value,
@@ -52,6 +55,7 @@ def forward(model, batch):
                                             transition_matrix_val,
                                             zero_padding,
                                             restart_padding)
+            all_hiddens.append(hiddens)
             # Score is the final column of hiddens
             start = 0
             for pattern_len, num_patterns in model.pattern_specs.items():
@@ -64,7 +68,7 @@ def forward(model, batch):
                     )  # mm(hidden, self.final)  # TODO: change if learning final state
                 start += num_patterns
 
-    return model.mlp.forward(scores)
+    return model.mlp.forward(scores), transition_matrices, all_hiddens
 
 def get_transition_matrices(model, batch):
     mm_res = mm(model.diags, batch.embeddings_matrix)
@@ -108,6 +112,10 @@ def transition_once(model,
                      eps_value  # doesn't depend on token, just state
                  )), 1))
     # single steps forward (consume a token, move forward one state)
+    # print(hiddens[:, -1])
+    # print("RESTART old: ", restart_padding)
+
+    # print("ef", restart_padding.size(), hiddens[:, -1].size(), transition_matrix_val[:, 1, :-1].size())
     result = \
         cat((restart_padding,  # <- Adding the start state
              model.semiring.times(
@@ -158,10 +166,30 @@ class TestPatternLengths(unittest.TestCase):
         test_data = [self.data[0]]
         batch = Batch(test_data, self.embeddings, GPU)
         batch2 = soft_patterns.Batch(test_data, self.embeddings, GPU)
-        print(batch.size(), batch2.size())
-        expected = forward(self.model, batch).data
-        actual = self.model.forward(batch2).data
-        for expd_doc, act_doc in zip(expected, actual):
+        expected, transition_expected,all_hiddens_expected = forward(self.model, batch)
+        actual, transition_actual,all_hiddens_actual = self.model.forward(batch2, 3)
+
+        for mat_actual, mat_expected in zip(transition_actual, transition_expected):
+            for i in range(mat_actual.size()[1]):
+                for j in range(mat_actual.size()[2]):
+                    for k in range(mat_actual.size()[3]):
+                        k1=mat_actual[0,i,j,k].data.numpy()[0]
+                        k2=mat_expected[0][i,j,k].data.numpy()[0]
+                        # print("tt", i,j,k1, k2, k1==k2)
+
+                        self.assertAlmostEqual(k1, k2, places=4)
+
+        k = 0
+        for hiddens_actual, hiddens_expected in zip(all_hiddens_actual, all_hiddens_expected):
+            # print(k)
+            for i in range(hiddens_expected.size()[0]):
+                # print("\t", i)
+                for j in range(hiddens_expected.size()[1]):
+                    # print("\t\t", j)
+                    self.assertAlmostEqual(hiddens_actual[i,j].data.numpy()[0], hiddens_expected[i,j].data.numpy()[0], places=4)
+            k += 1
+
+        for expd_doc, act_doc in zip(expected.data, actual.data):
             for expd_y, act_y in zip(expd_doc, act_doc):
                 self.assertAlmostEqual(expd_y, act_y, places=4)
 
