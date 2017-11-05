@@ -91,9 +91,6 @@ class Batch:
                 doc_trensor = doc_trensor.cuda()
             self.docs[i] = Variable(doc_trensor)
 
-
-
-
     def size(self):
         return len(self.docs)
 
