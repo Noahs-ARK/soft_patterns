@@ -7,10 +7,7 @@ import torch
 from torch import cat, mm, FloatTensor
 from torch.autograd import Variable
 from util import nub
-from itertools import chain, islice
-
-
-
+from itertools import chain
 import soft_patterns
 from data import read_embeddings, read_docs
 from soft_patterns import fixed_var, SoftPatternClassifier
@@ -70,6 +67,7 @@ def forward(model, batch):
 
     return model.mlp.forward(scores), transition_matrices, all_hiddens
 
+
 def get_transition_matrices(model, batch):
     mm_res = mm(model.diags, batch.embeddings_matrix)
     transition_probs = \
@@ -89,6 +87,7 @@ def get_transition_matrices(model, batch):
         for doc in batch.docs
     ]
     return transition_matrices
+
 
 def transition_once(model,
                     eps_value,
@@ -190,7 +189,6 @@ class TestPatternLengths(unittest.TestCase):
                 self.assertAlmostEqual(expd_y, act_y, places=4)
 
 
-
 class Batch:
     def __init__(self, docs, embeddings, gpu):
         """ Makes a smaller vocab of only words used in the given docs """
@@ -244,7 +242,6 @@ class Vocab:
     @staticmethod
     def from_docs(docs, default=UNK_TOKEN):
         return Vocab((i for doc in docs for i in doc), default=default)
-
 
 
 if __name__ == "__main__":

@@ -86,10 +86,10 @@ class Batch:
         """Pad each document, and turn it into a variable"""
         for i in range(self.size()):
             self.docs[i] += [1] * (self.max_doc_size() - len(self.docs[i]))
-            doc_trensor = torch.LongTensor(self.docs[i])
+            doc_tensor = torch.LongTensor(self.docs[i])
             if gpu:
-                doc_trensor = doc_trensor.cuda()
-            self.docs[i] = Variable(doc_trensor)
+                doc_tensor = doc_tensor.cuda()
+            self.docs[i] = Variable(doc_tensor)
 
     def size(self):
         return len(self.docs)
