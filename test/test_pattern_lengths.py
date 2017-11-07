@@ -15,7 +15,7 @@ import soft_patterns
 from data import read_embeddings, read_docs
 from soft_patterns import fixed_var, SoftPatternClassifier
 from test.settings import EMBEDDINGS_FILENAME, DATA_FILENAME, MODEL_FILENAME, PATTERN_SPECS, MLP_HIDDEN_DIM, \
-    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, DROPOUT, LEGACY
+    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, LEGACY
 
 
 UNK_TOKEN = "*UNK*"
@@ -77,9 +77,6 @@ def get_transition_matrices(model, batch):
 
     if model.gpu:
         transition_probs = transition_probs.cuda()
-
-    if model.dropout:
-        transition_probs = model.dropout(transition_probs)
 
     # transition matrix for each document in batch
     transition_matrices = [
@@ -153,7 +150,6 @@ class TestPatternLengths(unittest.TestCase):
                 vocab,
                 SEMIRING,
                 GPU,
-                DROPOUT,
                 LEGACY
             )
         self.model.load_state_dict(state_dict)

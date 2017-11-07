@@ -113,7 +113,6 @@ class SoftPatternClassifier(Module):
                  vocab,
                  semiring,
                  gpu=False,
-                 dropout=0,
                  legacy=False):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
@@ -152,10 +151,6 @@ class SoftPatternClassifier(Module):
 
         # Bias term
         bias_data = randn(diag_data_size, 1).type(self.dtype)
-
-        self.dropout = None
-        if dropout:
-            self.dropout = torch.nn.Dropout(dropout)
 
         self.diags = Parameter(diag_data)
         self.bias = Parameter(bias_data)
@@ -271,7 +266,7 @@ class SoftPatternClassifier(Module):
         print()
         return max_scores
 
-    def get_transition_matrices(self, batch):
+    def get_transition_matrices(self, batch, dropout=None):
         mm_res = mm(self.diags, batch.embeddings_matrix)
         transition_scores = \
             self.semiring.from_float(mm_res + self.bias).t()
@@ -279,8 +274,8 @@ class SoftPatternClassifier(Module):
         if self.gpu:
             transition_scores = transition_scores.cuda()
 
-        if self.dropout:
-            transition_scores = self.dropout(transition_scores)
+        if dropout:
+            transition_scores = dropout(transition_scores)
 
         batched_transition_scores = [
             torch.index_select(transition_scores, 0, doc) for doc in batch.docs
@@ -297,13 +292,13 @@ class SoftPatternClassifier(Module):
 
         return transition_matrices
 
-    def forward(self, batch, debug=0):
+    def forward(self, batch, debug=0, dropout=None):
         """
         Calculate score for one document.
         doc -- a sequence of indices that correspond to the word embedding matrix
         """
         time1 = monotonic()
-        transition_matrices = self.get_transition_matrices(batch)
+        transition_matrices = self.get_transition_matrices(batch, dropout)
         time2 = monotonic()
 
         scores = Variable(self.semiring.zero(batch.size(), self.total_num_patterns).type(self.dtype))
@@ -329,7 +324,7 @@ class SoftPatternClassifier(Module):
 
         if debug % 4 == 3:
             all_hiddens = [hiddens[0,:,:]]
-        for i in range (batch.max_doc_size()):
+        for i in range(batch.max_doc_size()):
             transition_matrix_val = transition_matrices[i]
             hiddens = self.transition_once(eps_value,
                                            hiddens,
@@ -411,18 +406,18 @@ class SoftPatternClassifier(Module):
         return [int(x) for x in argmax(output)]
 
 
-def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function, gpu=False, clip=None, debug=0):
+def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function, gpu=False, clip=None, debug=0, dropout=None):
     """Train on one doc. """
     optimizer.zero_grad()
     time0 = monotonic()
-    loss = compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, debug)
+    loss = compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, debug, dropout)
     # print("ls", loss.size())
 
     time1 = monotonic()
     loss.backward()
 
     time2 = monotonic()
-    if clip is not None:
+    if clip is not None and clip > 0:
         torch.nn.utils.clip_grad_norm(model.parameters(), clip)
 
     optimizer.step()
@@ -436,9 +431,9 @@ def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function
     return loss.data
 
 
-def compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, debug=0):
+def compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, debug=0, dropout=None):
     time1 = monotonic()
-    output = model.forward(batch, debug)
+    output = model.forward(batch, debug, dropout)
 
     if debug:
         time2 = monotonic()
@@ -480,10 +475,16 @@ def train(train_data,
           run_scheduler=False,
           gpu=False,
           clip=None,
-          debug=0):
+          debug=0,
+          dropout=0):
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
     loss_function = NLLLoss(None, False)
+
+    if dropout:
+        dropout = torch.nn.Dropout(dropout)
+    else:
+        dropout = None
 
     debug_print = int(100 / batch_size) + 1
 
@@ -506,7 +507,7 @@ def train(train_data,
             batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
             gold = [x[1] for x in batch]
             loss += torch.sum(
-                train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip, debug)
+                train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip, debug, dropout)
             )
             if i % debug_print == (debug_print - 1):
                 print(".", end="", flush=True)
@@ -624,7 +625,6 @@ def main(args):
 
         dev_data = dev_data[:n]
 
-    dropout = None if args.td is None else args.dropout
     semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
 
     model = SoftPatternClassifier(pattern_specs,
@@ -635,7 +635,6 @@ def main(args):
                                   vocab,
                                   semiring,
                                   args.gpu,
-                                  dropout,
                                   args.legacy)
 
     if args.gpu:

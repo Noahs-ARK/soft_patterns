@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from test.settings import EMBEDDINGS_FILENAME, DATA_FILENAME, MODEL_FILENAME, PATTERN_SPECS, MLP_HIDDEN_DIM, \
-    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, DROPOUT, LEGACY
+    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, LEGACY
 
 torch.manual_seed(100)
 np.random.seed(100)
@@ -28,7 +28,6 @@ class TestBatching(unittest.TestCase):
                 vocab,
                 SEMIRING,
                 GPU,
-                DROPOUT,
                 LEGACY
             )
         self.model.load_state_dict(state_dict)
