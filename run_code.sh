@@ -13,9 +13,12 @@ clip=''
 clips=''
 gpu=''
 
+glove_index=1
+gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
+
 
 if [ "$#" -lt 4 ]; then
-	echo "Usage: $0 <Pattern spcification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)>"
+	echo "Usage: $0 <Pattern spcification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)> <glove index=$glove_index (${gloves[@]})>"
 	exit -1
 elif [ "$#" -gt 4 ]; then
 	r=$5
@@ -39,6 +42,9 @@ elif [ "$#" -gt 4 ]; then
 					if [ $9 -eq 1 ]; then
 						gpu='-g'
 					fi
+					if [ "$#" -gt 9 ]; then
+						glove_index=${10}
+					fi
 				fi
 			fi
 		fi
@@ -52,26 +58,28 @@ dim=$2
 lr=$3
 t=$4
 
-git_tag=`git log | head -1 | cut -d ' ' -f2`
+glove=${gloves[$glove_index]}
 
-suffix=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${b}${clips}_$git_tag
-odir=~/work/soft_patterns/output_$suffix
+git_tag=$(git log | head -1 | awk '{print $2}' | cut -b-7)
+
+odir=$HOME/work/soft_patterns/output_p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}_$git_tag
+
 
 mkdir -p $odir
 
 com="python -u soft_patterns.py        \
-	 -e $HOME/resources/glove/glove.6B.100d.txt         \
-	--td $HOME/resources/text_cat/stanford_sentiment_binary//train.data         \
-	--tl $HOME/resources/text_cat/stanford_sentiment_binary//train.labels       \
-	--vd $HOME/resources/text_cat/stanford_sentiment_binary//dev.data           \
-	--vl $HOME/resources/text_cat/stanford_sentiment_binary//dev.labels         \
-	--model_save_dir $odir \
-	-i 250 \
-	 -p $p \
-	-t $t \
-	-d $dim \
-	-l $lr $rf $mpf $clip $gpu\
-	-b $b"
+         -e $HOME/resources/glove/glove.${glove}.txt         \
+        --td $HOME/resources/text_cat/stanford_sentiment_binary//train.data         \
+        --tl $HOME/resources/text_cat/stanford_sentiment_binary//train.labels       \
+        --vd $HOME/resources/text_cat/stanford_sentiment_binary//dev.data           \
+        --vl $HOME/resources/text_cat/stanford_sentiment_binary//dev.labels         \
+        --model_save_dir $odir \
+        -i 250 \
+         -p $p \
+        -t $t \
+        -d $dim \
+        -l $lr $rf $mpf $clip $gpu\
+        -b $b"
 
 echo $com
 $com | tee $odir/output.dat
