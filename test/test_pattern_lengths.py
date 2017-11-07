@@ -6,16 +6,11 @@ import numpy as np
 import torch
 from torch import cat, mm, FloatTensor
 from torch.autograd import Variable
-from util import nub
-from itertools import chain
 import soft_patterns
-from data import read_embeddings, read_docs
+from data import read_embeddings, read_docs, Vocab
 from soft_patterns import fixed_var, SoftPatternClassifier
 from test.settings import EMBEDDINGS_FILENAME, DATA_FILENAME, MODEL_FILENAME, PATTERN_SPECS, MLP_HIDDEN_DIM, \
     NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, LEGACY
-
-
-UNK_TOKEN = "*UNK*"
 
 torch.manual_seed(100)
 np.random.seed(100)
@@ -46,12 +41,13 @@ def forward(model, batch):
         all_hiddens.append(hiddens)
         # For each token in document
         for transition_matrix_val in transition_matrices[doc_index]:
-            hiddens = transition_once(model, eps_value,
-                                            hiddens,
-                                            self_loop_scale,
-                                            transition_matrix_val,
-                                            zero_padding,
-                                            restart_padding)
+            hiddens = transition_once(model,
+                                      eps_value,
+                                      hiddens,
+                                      self_loop_scale,
+                                      transition_matrix_val,
+                                      zero_padding,
+                                      restart_padding)
             all_hiddens.append(hiddens)
             # Score is the final column of hiddens
             start = 0
@@ -161,27 +157,24 @@ class TestPatternLengths(unittest.TestCase):
         test_data = [self.data[0]]
         batch = Batch(test_data, self.embeddings, GPU)
         batch2 = soft_patterns.Batch(test_data, self.embeddings, GPU)
-        expected, transition_expected,all_hiddens_expected = forward(self.model, batch)
-        actual, transition_actual,all_hiddens_actual = self.model.forward(batch2, 3)
+        expected, transition_expected, all_hiddens_expected = forward(self.model, batch)
+        actual, transition_actual, all_hiddens_actual = self.model.forward(batch2, 3)
 
         for mat_actual, mat_expected in zip(transition_actual, transition_expected):
             for i in range(mat_actual.size()[1]):
                 for j in range(mat_actual.size()[2]):
                     for k in range(mat_actual.size()[3]):
-                        k1=mat_actual[0,i,j,k].data.numpy()[0]
-                        k2=mat_expected[0][i,j,k].data.numpy()[0]
-                        # print("tt", i,j,k1, k2, k1==k2)
-
+                        k1 = mat_actual[0, i, j, k].data.numpy()[0]
+                        k2 = mat_expected[0][i, j, k].data.numpy()[0]
                         self.assertAlmostEqual(k1, k2, places=4)
 
         k = 0
         for hiddens_actual, hiddens_expected in zip(all_hiddens_actual, all_hiddens_expected):
-            # print(k)
             for i in range(hiddens_expected.size()[0]):
-                # print("\t", i)
                 for j in range(hiddens_expected.size()[1]):
-                    # print("\t\t", j)
-                    self.assertAlmostEqual(hiddens_actual[i,j].data.numpy()[0], hiddens_expected[i,j].data.numpy()[0], places=4)
+                    self.assertAlmostEqual(hiddens_actual[i, j].data.numpy()[0],
+                                           hiddens_expected[i, j].data.numpy()[0],
+                                           places=4)
             k += 1
 
         for expd_doc, act_doc in zip(expected.data, actual.data):
@@ -199,49 +192,6 @@ class Batch:
 
     def size(self):
         return len(self.docs)
-
-
-class Vocab:
-    """
-    A bimap from name to index.
-    Use `vocab[i]` to lookup name for `i`,
-    and `vocab(n)` to lookup index for `n`.
-    """
-    def __init__(self,
-                 names,
-                 default=UNK_TOKEN):
-        self.default = default
-        self.names = list(nub(chain([default], names)))
-        self.index = {name: i for i, name in enumerate(self.names)}
-
-    def __getitem__(self, index):
-        """ Lookup name given index. """
-        return self.names[index] if 0 < index < len(self.names) else self.default
-
-    def __call__(self, name):
-        """ Lookup index given name. """
-        return self.index.get(name, 0)
-
-    def __contains__(self, item):
-        return item in self.index
-
-    def __len__(self):
-        return len(self.names)
-
-    def __or__(self, other):
-        return Vocab(self.names + other.names)
-
-    def numberize(self, doc):
-        """ Replace each name in doc with its index. """
-        return [self(token) for token in doc]
-
-    def denumberize(self, doc):
-        """ Replace each index in doc with its name. """
-        return [self[idx] for idx in doc]
-
-    @staticmethod
-    def from_docs(docs, default=UNK_TOKEN):
-        return Vocab((i for doc in docs for i in doc), default=default)
 
 
 if __name__ == "__main__":

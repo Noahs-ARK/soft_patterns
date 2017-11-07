@@ -72,11 +72,9 @@ MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity)
 
 
 class Batch:
-    PadToken = 1
-
     def __init__(self, docs, embeddings, gpu):
         """ Makes a smaller vocab of only words used in the given docs """
-        mini_vocab = Vocab.from_docs(docs, default=0, pad_token=Batch.PadToken)
+        mini_vocab = Vocab.from_docs(docs, default=0)
         self.max_doc_size = max(len(doc) for doc in docs)
         self.docs = [
             Batch.pad(mini_vocab.numberize(doc), self.max_doc_size, gpu)
@@ -88,9 +86,9 @@ class Batch:
 
     @staticmethod
     def pad(doc, max_len, gpu):
-        """Pad each document, and turn it into a variable"""
+        """Pad each document """
         pad_len = max_len - len(doc)
-        doc_tensor = torch.LongTensor(doc + [Batch.PadToken] * pad_len)
+        doc_tensor = torch.LongTensor(doc + [0] * pad_len)
         return fixed_var(doc_tensor, gpu=gpu)
 
     def size(self):

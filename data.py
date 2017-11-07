@@ -6,7 +6,6 @@ from util import nub
 
 PRINTABLE = set(string.printable)
 UNK_TOKEN = "*UNK*"
-PAD_TOKEN = "*PAD*"
 
 
 def is_printable(word):
@@ -21,11 +20,9 @@ class Vocab:
     """
     def __init__(self,
                  names,
-                 default=UNK_TOKEN,
-                 pad_token=PAD_TOKEN):
+                 default=UNK_TOKEN):
         self.default = default
-        self.pad_token = pad_token
-        self.names = list(nub(chain([default, pad_token], names)))
+        self.names = list(nub(chain([default], names)))
         self.index = {name: i for i, name in enumerate(self.names)}
 
     def __getitem__(self, index):
@@ -54,8 +51,8 @@ class Vocab:
         return [self[idx] for idx in doc]
 
     @staticmethod
-    def from_docs(docs, default=UNK_TOKEN, pad_token=PAD_TOKEN):
-        return Vocab((i for doc in docs for i in doc), default=default, pad_token=pad_token)
+    def from_docs(docs, default=UNK_TOKEN):
+        return Vocab((i for doc in docs for i in doc), default=default)
 
 
 def read_embeddings(filename,
@@ -64,7 +61,6 @@ def read_embeddings(filename,
     print("Reading", filename)
     dim, has_header = check_dim_and_header(filename)
     unk_vec = np.zeros(dim)  # TODO: something better?
-    pad_vec = np.zeros(dim)  # TODO: something better?
     with open(filename, encoding='utf-8') as input_file:
         if has_header:
             input_file.readline()  # skip over header
@@ -77,13 +73,13 @@ def read_embeddings(filename,
             if is_printable(word) and (fixed_vocab is None or word in fixed_vocab)
         )
         if max_vocab_size is not None:
-            word_vecs = islice(word_vecs, max_vocab_size - 2)
+            word_vecs = islice(word_vecs, max_vocab_size - 1)
         word_vecs = list(word_vecs)
 
     print("Done reading", len(word_vecs), "vectors of dimension", dim)
     vocab = Vocab((word for word, _ in word_vecs))
 
-    vecs = [unk_vec] + [pad_vec] + [vec / np.linalg.norm(vec) for _, vec in word_vecs]
+    vecs = [unk_vec] + [vec / np.linalg.norm(vec) for _, vec in word_vecs]
 
     return vocab, vecs, dim
 

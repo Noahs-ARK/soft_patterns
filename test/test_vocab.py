@@ -2,7 +2,7 @@
 
 import unittest
 
-from data import Vocab, read_embeddings, UNK_TOKEN, PAD_TOKEN
+from data import Vocab, read_embeddings, UNK_TOKEN
 
 EMBEDDINGS_FILENAME = 'test/data/glove.6B.50d.20words.txt'
 
@@ -15,9 +15,8 @@ class TestVocab(unittest.TestCase):
         self.assertEqual(len(vocab), max_vocab_size)
         self.assertEqual(dim, 50)
         self.assertEqual(vocab(UNK_TOKEN), 0)
-        self.assertEqual(vocab(PAD_TOKEN), 1)
-        self.assertEqual(vocab("the"), 2)
-        self.assertEqual(vocab(","), 3)
+        self.assertEqual(vocab("the"), 1)
+        self.assertEqual(vocab(","), 2)
         self.assertAlmostEqualList(
             list(vecs[vocab("the")])[:10],
             [
@@ -31,8 +30,9 @@ class TestVocab(unittest.TestCase):
                 -0.035955359038543321,
                 -0.00013290116839109539,
                 -0.13217046660344609
-            ]
-        , 7)
+            ],
+            7
+        )
         self.assertAlmostEqualList(
             list(vecs[vocab(",")])[:10],
             [
@@ -69,8 +69,12 @@ class TestVocab(unittest.TestCase):
             for doc in fixture:
                 self.assertEqual(v.denumberize(v.numberize(doc)), doc)
 
-    def assertAlmostEqualList(self, first, second, places=None, msg=None,
-                          delta=None):
+    def assertAlmostEqualList(self,
+                              first,
+                              second,
+                              places=None,
+                              msg=None,
+                              delta=None):
         for i, j in zip(first, second):
             self.assertAlmostEqual(i, j, places, msg, delta)
 

@@ -33,29 +33,6 @@ class TestBatching(unittest.TestCase):
         self.model.load_state_dict(state_dict)
         self.batch_sizes = [1, 2, 4, 5, 10, 20]
 
-    def test_same_transition_matrices_for_diff_batches(self):
-        """ Test that different batch sizes yield same transition matrices """
-        matrices = [
-            [
-                mat
-                for chunk in chunked(self.data, batch_size)
-                for mat in self.model.get_transition_matrices(
-                                        Batch(chunk,
-                                              self.embeddings,
-                                              GPU))
-            ]
-            for batch_size in self.batch_sizes
-        ]
-        # transpose, so doc_matrices are all the diff batch sizes for a given doc
-        for doc_matrices in zip(*matrices):
-            # make sure adjacent batch sizes predict the same probs
-            for batch_size_a, batch_size_b in zip(doc_matrices, doc_matrices[1:]):
-                self.assertEqual(len(batch_size_a), len(batch_size_b))
-                for x, y in zip(batch_size_a, batch_size_b):
-                    for x2, y2 in zip(x.view(x.size()[0] * x.size()[1] * x.size()[2]).data,
-                                      y.view(x.size()[0] * x.size()[1] * x.size()[2]).data):
-                        self.assertAlmostEqual(x2, y2, places=4)
-
     def test_same_forward_for_diff_batches(self):
         """ Test that different batch sizes yield same `forward` results """
         # for each batch size, chunk data into batches, run model.forward,
