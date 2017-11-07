@@ -72,30 +72,29 @@ MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity)
 
 
 class Batch:
+    PadToken = 1
+
     def __init__(self, docs, embeddings, gpu):
         """ Makes a smaller vocab of only words used in the given docs """
-        mini_vocab = Vocab.from_docs(docs, default=0, pad_token=1)
-        self._max_doc_size = np.max([len(doc) for doc in docs])
-        self.docs = [mini_vocab.numberize(doc) for doc in docs]
-        self.pad_docs(gpu)
-
+        mini_vocab = Vocab.from_docs(docs, default=0, pad_token=Batch.PadToken)
+        self.max_doc_size = max(len(doc) for doc in docs)
+        self.docs = [
+            Batch.pad(mini_vocab.numberize(doc), self.max_doc_size, gpu)
+            for doc in docs
+        ]
+        self.doc_lens = torch.LongTensor([len(doc) for doc in docs])
         local_embeddings = [embeddings[i] for i in mini_vocab.names]
         self.embeddings_matrix = fixed_var(FloatTensor(local_embeddings).t(), gpu)
 
-    def pad_docs(self, gpu):
+    @staticmethod
+    def pad(doc, max_len, gpu):
         """Pad each document, and turn it into a variable"""
-        for i in range(self.size()):
-            self.docs[i] += [1] * (self.max_doc_size() - len(self.docs[i]))
-            doc_tensor = torch.LongTensor(self.docs[i])
-            if gpu:
-                doc_tensor = doc_tensor.cuda()
-            self.docs[i] = Variable(doc_tensor)
+        pad_len = max_len - len(doc)
+        doc_tensor = torch.LongTensor(doc + [Batch.PadToken] * pad_len)
+        return fixed_var(doc_tensor, gpu=gpu)
 
     def size(self):
         return len(self.docs)
-
-    def max_doc_size(self):
-        return self._max_doc_size
 
 
 class SoftPatternClassifier(Module):
@@ -140,9 +139,7 @@ class SoftPatternClassifier(Module):
             for pattern_len, num_patterns in self.pattern_specs.items()
             for end in num_patterns * [pattern_len - 1]
         ]
-        self.end_states = fixed_var(LongTensor(end_states))
-        if self.gpu:
-            self.end_states = self.end_states.cuda()
+        self.end_states = fixed_var(LongTensor(end_states), gpu=self.gpu)
 
         diag_data_size = self.max_pattern_length * self.num_diags * self.total_num_patterns
 
@@ -233,8 +230,7 @@ class SoftPatternClassifier(Module):
 
             transition_matrices = self.get_transition_matrices(batch_obj)
 
-            for d in range(batch_obj.size()):
-                doc = batch_obj.docs[d]
+            for d, doc in enumerate(batch_obj.docs):
                 doc_idx = batch_idx * batch_size + d
                 for i in range(len(doc)):
                     start = 0
@@ -282,31 +278,30 @@ class SoftPatternClassifier(Module):
         ]
 
         batched_transition_scores = torch.cat(batched_transition_scores).view(
-            batch.size(), int(batch.max_doc_size()), self.total_num_patterns, self.num_diags, self.max_pattern_length)
+            batch.size(), batch.max_doc_size, self.total_num_patterns, self.num_diags, self.max_pattern_length)
 
         # transition matrix for each document in batch
         transition_matrices = [
             batched_transition_scores[:, word_index, :, :, :]
-            for word_index in range(batch.max_doc_size())
+            for word_index in range(batch.max_doc_size)
         ]
 
         return transition_matrices
 
     def forward(self, batch, debug=0, dropout=None):
-        """
-        Calculate score for one document.
-        doc -- a sequence of indices that correspond to the word embedding matrix
-        """
+        """ Calculate scores for one batch of documents. """
         time1 = monotonic()
         transition_matrices = self.get_transition_matrices(batch, dropout)
         time2 = monotonic()
 
-        scores = Variable(self.semiring.zero(batch.size(), self.total_num_patterns).type(self.dtype))
+        batch_size = batch.size()
+        num_patterns = self.total_num_patterns
+        scores = fixed_var(self.semiring.zero(batch_size, num_patterns).type(self.dtype))
 
         # to add start state for each word in the document.
-        restart_padding = fixed_var(self.semiring.one(batch.size(), self.total_num_patterns, 1), self.gpu)
+        restart_padding = fixed_var(self.semiring.one(batch_size, num_patterns, 1), self.gpu)
 
-        zero_padding = fixed_var(self.semiring.zero(batch.size(), self.total_num_patterns, 1), self.gpu)
+        zero_padding = fixed_var(self.semiring.zero(batch_size, num_patterns, 1), self.gpu)
 
         eps_value = \
             self.semiring.times(
@@ -315,33 +310,35 @@ class SoftPatternClassifier(Module):
             )
 
         self_loop_scale = self.get_self_loop_scale()
-        end_state_local = self.end_states.expand(batch.size(), self.total_num_patterns, 1)
-        # Different documents in batch
-        hiddens = Variable(self.semiring.zero(batch.size(), self.total_num_patterns, self.max_pattern_length).type(self.dtype))
-        hiddens[:, :, 0] = self.semiring.one(batch.size(), self.total_num_patterns, 1).type(self.dtype)
-            # Start state
-            # For each token in document
+        batch_end_state_idxs = self.end_states.expand(batch_size, num_patterns, 1)
+        hiddens = Variable(self.semiring.zero(batch_size,
+                                              num_patterns,
+                                              self.max_pattern_length).type(self.dtype))
+        # set start state (0) to 1 for each pattern in each doc
+        hiddens[:, :, 0] = self.semiring.one(batch_size,
+                                             num_patterns,
+                                             1).type(self.dtype)
 
         if debug % 4 == 3:
-            all_hiddens = [hiddens[0,:,:]]
-        for i in range(batch.max_doc_size()):
-            transition_matrix_val = transition_matrices[i]
+            all_hiddens = [hiddens[0, :, :]]
+        for i, transition_matrix in enumerate(transition_matrices):
             hiddens = self.transition_once(eps_value,
                                            hiddens,
                                            self_loop_scale,
-                                           transition_matrix_val,
+                                           transition_matrix,
                                            zero_padding,
                                            restart_padding)
             if debug % 4 == 3:
-                all_hiddens.append(hiddens[0,:,:])
+                all_hiddens.append(hiddens[0, :, :])
 
             # Look at the end state for each pattern, and "add" it into score
-            end_state_vals = torch.gather(hiddens, 2, end_state_local).view(scores.size()[0], scores.size()[1])
-            # print(end_state_vals.size(), scores.size())
-            scores = \
+            end_state_vals = torch.gather(hiddens, 2, batch_end_state_idxs).view(batch_size, num_patterns)
+            # but only update score when we're not already past the end of the doc
+            active_doc_idxs = torch.nonzero(torch.gt(batch.doc_lens, i)).squeeze()
+            scores[active_doc_idxs] = \
                 self.semiring.plus(
-                    scores,
-                    end_state_vals
+                    scores[active_doc_idxs],
+                    end_state_vals[active_doc_idxs]
                 )
 
         if debug:
