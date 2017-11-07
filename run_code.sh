@@ -13,7 +13,7 @@ clip=''
 clips=''
 gpu=''
 
-glove_index=1
+glove_index=0
 gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
 
 
