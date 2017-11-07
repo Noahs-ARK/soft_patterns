@@ -667,7 +667,8 @@ def main(args):
               args.scheduler,
               args.gpu,
               args.clip,
-              args.debug)
+              args.debug,
+              args.dropout)
     else:
         model.visualize_pattern(args.batch_size, dev_data, dev_text)
 
