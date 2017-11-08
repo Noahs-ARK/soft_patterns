@@ -36,11 +36,6 @@ def argmax(output):
     return am
 
 
-def get_nearest_neighbors(w, embeddings):
-    dot_products = mm(w, embeddings[:1000, :])
-    return argmax(dot_products)
-
-
 def normalize(data):
     length = data.size()[0]
     for i in range(length):
@@ -144,108 +139,6 @@ class SoftPatternClassifier(Module):
         self.epsilon_scale = self.to_cuda(fixed_var(FloatTensor([0])))
         self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(FloatTensor([0]))))
         print("# params:", sum(p.nelement() for p in self.parameters()))
-
-    def visualize_pattern(self, batch_size, dev_set=None, dev_text=None, n_top_scoring=5):
-        nearest_neighbors = get_nearest_neighbors(self.diags.data, FloatTensor(self.embeddings).t())
-
-        if dev_set is not None:
-            # print(dev_set[0])
-            scores = self.get_top_scoring_sequences(dev_set, batch_size)
-
-        start = 0
-        for i, (pattern_length, num_patterns) in enumerate(self.pattern_specs.items()):
-            # 1 above main diagonal
-            viewed_tensor = \
-                self.diags[self.starts[i]:self.ends[i], :].view(
-                    num_patterns,
-                    self.num_diags,
-                    pattern_length,
-                    self.word_dim
-                )[:, 1, :-1, :]
-            norms = norm(viewed_tensor, 2, 2)
-            viewed_biases = \
-                self.bias[self.starts[i]:self.ends[i], :].view(
-                    num_patterns,
-                    self.num_diags,
-                    pattern_length
-                )[:, 1, :-1]
-            reviewed_nearest_neighbors = \
-                nearest_neighbors[self.starts[i]:self.ends[i]].view(
-                    num_patterns,
-                    self.num_diags,
-                    pattern_length
-                )[:, 1, :-1]
-
-            if dev_set is not None:
-                for p in range(num_patterns):
-                    patt_scores = scores[start + p, :, :]
-                    last_n = len(patt_scores) - n_top_scoring
-                    sorted_keys = sorted(range(len(patt_scores)), key=lambda i: patt_scores[i][0].data[0])
-
-                    print("Top scoring",
-                          [(" ".join(dev_text[k][int(patt_scores[k][1].data[0]):int(patt_scores[k][2].data[0])]),
-                            round(patt_scores[k][0].data[0], 3)) for k in sorted_keys[last_n:]],
-                          "norms", [round(x, 3) for x in norms.data[p, :]],
-                          'biases', [round(x, 3) for x in viewed_biases.data[p, :]],
-                          'nearest neighbors', [self.vocab[x] for x in reviewed_nearest_neighbors[p, :]])
-                start += num_patterns
-
-    def get_top_scoring_sequences(self, dev_set, batch_size):
-        """
-        Get top scoring sequence in doc for this pattern (for interpretation purposes)
-        """
-        n = 3  # max_score, start_idx, end_idx
-
-        max_scores = Variable(MaxPlusSemiring.zero(self.total_num_patterns, len(dev_set), n))
-
-        zero_paddings = [
-            self.to_cuda(fixed_var(self.semiring.zero(num_patterns, 1)))
-            for num_patterns in self.pattern_specs.values()
-        ]
-
-        debug_print = int(100 / batch_size) + 1
-        eps_value = self.get_eps_value()
-        self_loop_scale = self.self_loop_scale
-
-        i = 0
-        for batch_idx, batch in enumerate(chunked(dev_set, batch_size)):
-            if i % debug_print == (debug_print - 1):
-                print(".", end="", flush=True)
-            i += 1
-            batch_obj = Batch([x for x, y in batch], self.embeddings, self.to_cuda)
-
-            transition_matrices = self.get_transition_matrices(batch_obj)
-
-            for d, doc in enumerate(batch_obj.docs):
-                doc_idx = batch_idx * batch_size + d
-                for i in range(len(doc)):
-                    start = 0
-                    for k, (pattern_length, num_patterns) in enumerate(self.pattern_specs.items()):
-                        hiddens = self.to_cuda(Variable(self.semiring.zero(num_patterns, pattern_length)))
-
-                        # Start state
-                        hiddens[:, 0] = self.to_cuda(self.semiring.one(num_patterns, 1))
-
-                        for j in range(i, min(i + pattern_length - 1, len(doc))):
-                            transition_matrix_val = transition_matrices[d][j][k]
-                            hiddens = self.transition_once(
-                                eps_value,
-                                hiddens,
-                                transition_matrix_val,
-                                zero_paddings[k],
-                                zero_paddings[k])
-
-                            scores = hiddens[:, -1]
-
-                            for p in range(num_patterns):
-                                pattern_idx = start + p
-                                if scores[p].data[0] > max_scores[pattern_idx, doc_idx, 0].data[0]:
-                                    max_scores[pattern_idx, doc_idx, 0] = scores[p]
-                                    max_scores[pattern_idx, doc_idx, 1] = i
-                                    max_scores[pattern_idx, doc_idx, 2] = j + 1
-                        start += num_patterns
-        print()
-        return max_scores
 
     def get_transition_matrices(self, batch, dropout=None):
         transition_scores = \
