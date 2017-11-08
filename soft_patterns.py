@@ -460,7 +460,8 @@ def train(train_data,
           gpu=False,
           clip=None,
           debug=0,
-          dropout=0):
+          dropout=0,
+          patience=1000):
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
     loss_function = NLLLoss(None, False)
@@ -480,6 +481,9 @@ def train(train_data,
     if run_scheduler:
         scheduler = ReduceLROnPlateau(optimizer, 'min', 0.1, 10, True)
 
+
+    best_dev_loss=100000000
+    best_dev_loss_index=-1
     start_time = monotonic()
 
     for it in range(num_iterations):
@@ -526,7 +530,9 @@ def train(train_data,
 
             i += 1
 
+
         print("\n")
+
         finish_iter_time = monotonic()
         train_acc = evaluate_accuracy(model, train_data, batch_size, gpu)
         dev_acc = evaluate_accuracy(model, dev_data, batch_size, gpu)
@@ -545,12 +551,23 @@ def train(train_data,
             )
         )
 
+        if dev_loss < best_dev_loss:
+            print("New best dev!")
+            best_dev_loss = dev_loss
+            best_dev_loss_index = 0
+            if model_save_dir is not None:
+                model_save_file = os.path.join(model_save_dir, "{}_{}.pth".format(model_file_prefix, it))
+                print("saving model to", model_save_file)
+                torch.save(model.state_dict(), model_save_file)
+        else:
+            best_dev_loss_index += 1
+            if best_dev_loss_index == patience:
+                print("Reached", patience, "iterations without improving dev loss. Breaking")
+                break
+
         if run_scheduler:
             scheduler.step(dev_loss)
 
-        if model_save_dir is not None:
-            model_save_file = os.path.join(model_save_dir, "{}_{}.pth".format(model_file_prefix, it))
-            torch.save(model.state_dict(), model_save_file)
 
     return model
 
@@ -652,7 +669,8 @@ def main(args):
               args.gpu,
               args.clip,
               args.debug,
-              args.dropout)
+              args.dropout,
+              args.patience)
     else:
         model.visualize_pattern(args.batch_size, dev_data, dev_text)
 
@@ -670,6 +688,7 @@ if __name__ == '__main__':
                         default="5:50,4:50,3:50,2:50")
     parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
     parser.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
+    parser.add_argument("--patience", help="Patience parameter (for early stopping)", type=int, default=30)
     parser.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
     parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
