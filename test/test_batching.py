@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from soft_patterns import Batch, SoftPatternClassifier, read_docs, read_embeddings, chunked
+from soft_patterns import Batch, SoftPatternClassifier, read_docs, read_embeddings, chunked, to_cuda
 import unittest
 import numpy as np
 import torch
@@ -43,7 +43,7 @@ class TestBatching(unittest.TestCase):
                 for chunk in chunked(self.data, batch_size)
                 for fwd in self.model.forward(Batch(chunk,
                                                     self.embeddings,
-                                                    GPU)).data
+                                                    to_cuda(GPU))).data
             ]
             for batch_size in self.batch_sizes
         ]

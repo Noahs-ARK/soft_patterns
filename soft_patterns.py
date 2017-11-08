@@ -22,11 +22,12 @@ from mlp import MLP
 from util import chunked, identity
 
 
-def fixed_var(tensor, gpu=False):
-    if gpu:
-        return Variable(tensor, requires_grad=False).cuda()
-    else:
-        return Variable(tensor, requires_grad=False)
+def to_cuda(gpu):
+    return (lambda v: v.cuda()) if gpu else identity
+
+
+def fixed_var(tensor):
+    return Variable(tensor, requires_grad=False)
 
 
 def argmax(output):
@@ -72,24 +73,18 @@ MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity)
 
 
 class Batch:
-    def __init__(self, docs, embeddings, gpu):
+    def __init__(self, docs, embeddings, cuda):
         """ Makes a smaller vocab of only words used in the given docs """
         mini_vocab = Vocab.from_docs(docs, default=0)
-        self.max_doc_size = max(len(doc) for doc in docs)
+        max_len = max(len(doc) for doc in docs)
+        self.max_doc_size = max_len
         self.docs = [
-            Batch.pad(mini_vocab.numberize(doc), self.max_doc_size, gpu)
+            cuda(fixed_var(torch.LongTensor(mini_vocab.numberize(doc) + [0] * (max_len - len(doc)))))
             for doc in docs
         ]
-        self.doc_lens = torch.LongTensor([len(doc) for doc in docs])
+        self.doc_lens = cuda(torch.LongTensor([len(doc) for doc in docs]))
         local_embeddings = [embeddings[i] for i in mini_vocab.names]
-        self.embeddings_matrix = fixed_var(FloatTensor(local_embeddings).t(), gpu)
-
-    @staticmethod
-    def pad(doc, max_len, gpu):
-        """Pad each document """
-        pad_len = max_len - len(doc)
-        doc_tensor = torch.LongTensor(doc + [0] * pad_len)
-        return fixed_var(doc_tensor, gpu=gpu)
+        self.embeddings_matrix = cuda(fixed_var(FloatTensor(local_embeddings).t()))
 
     def size(self):
         return len(self.docs)
@@ -116,11 +111,7 @@ class SoftPatternClassifier(Module):
         self.vocab = vocab
         self.embeddings = embeddings
 
-        self.dtype = torch.FloatTensor
-        if gpu:
-            self.dtype = torch.cuda.FloatTensor
-
-        self.gpu = gpu
+        self.to_cuda = to_cuda(gpu)
 
         self.total_num_patterns = sum(pattern_specs.values())
 
@@ -137,24 +128,21 @@ class SoftPatternClassifier(Module):
             for pattern_len, num_patterns in self.pattern_specs.items()
             for end in num_patterns * [pattern_len - 1]
         ]
-        self.end_states = fixed_var(LongTensor(end_states), gpu=self.gpu)
+        self.end_states = self.to_cuda(fixed_var(LongTensor(end_states)))
 
         diag_data_size = self.max_pattern_length * self.num_diags * self.total_num_patterns
-
-        diag_data = randn(diag_data_size, self.word_dim).type(self.dtype)
+        diag_data = self.to_cuda(randn(diag_data_size, self.word_dim))
         normalize(diag_data)
+        self.diags = Parameter(diag_data)
 
         # Bias term
-        bias_data = randn(diag_data_size, 1).type(self.dtype)
+        self.bias = self.to_cuda(Parameter(randn(diag_data_size, 1)))
 
-        self.diags = Parameter(diag_data)
-        self.bias = Parameter(bias_data)
-
-        self.epsilon = Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1).type(self.dtype))
+        self.epsilon = self.to_cuda(Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1)))
 
         # TODO: learned? hyperparameter?
-        self.epsilon_scale = fixed_var(FloatTensor([0]).type(self.dtype))
-        self.self_loop_scale = self.semiring.from_float(fixed_var(FloatTensor([0]).type(self.dtype)))
+        self.epsilon_scale = self.to_cuda(fixed_var(FloatTensor([0])))
+        self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(FloatTensor([0]))))
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def visualize_pattern(self, batch_size, dev_set=None, dev_text=None, n_top_scoring=5):
@@ -211,7 +199,7 @@ class SoftPatternClassifier(Module):
         max_scores = Variable(MaxPlusSemiring.zero(self.total_num_patterns, len(dev_set), n))
 
         zero_paddings = [
-            fixed_var(self.semiring.zero(num_patterns, 1), self.gpu)
+            self.to_cuda(fixed_var(self.semiring.zero(num_patterns, 1)))
             for num_patterns in self.pattern_specs.values()
         ]
 
@@ -224,7 +212,7 @@ class SoftPatternClassifier(Module):
             if i % debug_print == (debug_print - 1):
                 print(".", end="", flush=True)
             i += 1
-            batch_obj = Batch([x for x, y in batch], self.embeddings, self.gpu)
+            batch_obj = Batch([x for x, y in batch], self.embeddings, self.to_cuda)
 
             transition_matrices = self.get_transition_matrices(batch_obj)
 
@@ -233,10 +221,10 @@ class SoftPatternClassifier(Module):
                 for i in range(len(doc)):
                     start = 0
                     for k, (pattern_length, num_patterns) in enumerate(self.pattern_specs.items()):
-                        hiddens = Variable(self.semiring.zero(num_patterns, pattern_length).type(self.dtype))
+                        hiddens = self.to_cuda(Variable(self.semiring.zero(num_patterns, pattern_length)))
 
                         # Start state
-                        hiddens[:, 0] = self.semiring.one(num_patterns, 1).type(self.dtype)
+                        hiddens[:, 0] = self.to_cuda(self.semiring.one(num_patterns, 1))
 
                         for j in range(i, min(i + pattern_length - 1, len(doc))):
                             transition_matrix_val = transition_matrices[d][j][k]
@@ -260,12 +248,8 @@ class SoftPatternClassifier(Module):
         return max_scores
 
     def get_transition_matrices(self, batch, dropout=None):
-        mm_res = mm(self.diags, batch.embeddings_matrix)
         transition_scores = \
-            self.semiring.from_float(mm_res + self.bias).t()
-
-        if self.gpu:
-            transition_scores = transition_scores.cuda()
+            self.semiring.from_float(mm(self.diags, batch.embeddings_matrix) + self.bias).t()
 
         if dropout:
             transition_scores = dropout(transition_scores)
@@ -293,23 +277,21 @@ class SoftPatternClassifier(Module):
 
         batch_size = batch.size()
         num_patterns = self.total_num_patterns
-        scores = fixed_var(self.semiring.zero(batch_size, num_patterns).type(self.dtype))
+        scores = self.to_cuda(fixed_var(self.semiring.zero(batch_size, num_patterns)))
 
         # to add start state for each word in the document.
-        restart_padding = fixed_var(self.semiring.one(batch_size, num_patterns, 1), self.gpu)
+        restart_padding = self.to_cuda(fixed_var(self.semiring.one(batch_size, num_patterns, 1)))
 
-        zero_padding = fixed_var(self.semiring.zero(batch_size, num_patterns, 1), self.gpu)
+        zero_padding = self.to_cuda(fixed_var(self.semiring.zero(batch_size, num_patterns, 1)))
 
         eps_value = self.get_eps_value()
 
         batch_end_state_idxs = self.end_states.expand(batch_size, num_patterns, 1)
-        hiddens = Variable(self.semiring.zero(batch_size,
-                                              num_patterns,
-                                              self.max_pattern_length).type(self.dtype))
+        hiddens = self.to_cuda(Variable(self.semiring.zero(batch_size,
+                                                           num_patterns,
+                                                           self.max_pattern_length)))
         # set start state (0) to 1 for each pattern in each doc
-        hiddens[:, :, 0] = self.semiring.one(batch_size,
-                                             num_patterns,
-                                             1).type(self.dtype)
+        hiddens[:, :, 0] = self.to_cuda(self.semiring.one(batch_size, num_patterns, 1))
 
         if debug % 4 == 3:
             all_hiddens = [hiddens[0, :, :]]
@@ -426,7 +408,7 @@ def compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, deb
     # print("os", output.dim(), output.size(), "bs", batch.size(), "gs", len(gold_output))
     return loss_function(
         log_softmax(output).view(batch.size(), num_classes),
-        fixed_var(LongTensor(gold_output), gpu)
+        to_cuda(gpu)(fixed_var(LongTensor(gold_output)))
     )
 
 
@@ -435,7 +417,7 @@ def evaluate_accuracy(model, data, batch_size, gpu, debug=0):
     correct = 0
     num_1s = 0
     for batch in chunked(data, batch_size):
-        batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
+        batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
         gold = [x[1] for x in batch]
         predicted = model.predict(batch_obj, debug)
         num_1s += sum(predicted)
@@ -492,7 +474,7 @@ def train(train_data,
         loss = 0.0
         i = 0
         for batch in chunked(train_data, batch_size):
-            batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
+            batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
             gold = [x[1] for x in batch]
             loss += torch.sum(
                 train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip, debug, dropout)
@@ -519,7 +501,7 @@ def train(train_data,
         dev_loss = 0.0
         i = 0
         for batch in chunked(dev_data, batch_size):
-            batch_obj = Batch([x[0] for x in batch], model.embeddings, gpu)
+            batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
             gold = [x[1] for x in batch]
             dev_loss += torch.sum(compute_loss(model, batch_obj, num_classes, gold, loss_function, gpu, debug).data)
             if i % debug_print == (debug_print - 1):
@@ -639,7 +621,7 @@ def main(args):
                                   args.legacy)
 
     if args.gpu:
-        model.cuda()
+        model.to_cuda()
 
     model_file_prefix = 'model'
     # Loading model
