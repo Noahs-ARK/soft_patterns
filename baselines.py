@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Text classification baseline models.
 """
@@ -7,7 +7,7 @@ from soft_patterns import fixed_var, train, to_cuda
 import numpy as np
 import os
 import torch
-from torch import FloatTensor, cuda
+from torch import FloatTensor
 from torch.functional import stack
 from torch.nn import Module, Dropout2d
 
