@@ -29,8 +29,6 @@ def forward(model, batch):
             model.semiring.from_float(model.epsilon_scale),
             model.semiring.from_float(model.epsilon)
         )
-    self_loop_scale = model.get_self_loop_scale()
-
     all_hiddens = []
 
     # Different documents in batch
@@ -44,7 +42,7 @@ def forward(model, batch):
             hiddens = transition_once(model,
                                       eps_value,
                                       hiddens,
-                                      self_loop_scale,
+                                      model.self_loop_scale,
                                       transition_matrix_val,
                                       zero_padding,
                                       restart_padding)

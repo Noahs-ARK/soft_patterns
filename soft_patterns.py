@@ -154,7 +154,7 @@ class SoftPatternClassifier(Module):
 
         # TODO: learned? hyperparameter?
         self.epsilon_scale = fixed_var(FloatTensor([0]).type(self.dtype))
-        self.self_loop_scale = fixed_var(FloatTensor([0]).type(self.dtype))
+        self.self_loop_scale = self.semiring.from_float(fixed_var(FloatTensor([0]).type(self.dtype)))
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def visualize_pattern(self, batch_size, dev_set=None, dev_text=None, n_top_scoring=5):
@@ -217,7 +217,7 @@ class SoftPatternClassifier(Module):
 
         debug_print = int(100 / batch_size) + 1
         eps_value = self.get_eps_value()
-        self_loop_scale = self.get_self_loop_scale()
+        self_loop_scale = self.self_loop_scale
 
         i = 0
         for batch_idx, batch in enumerate(chunked(dev_set, batch_size)):
@@ -243,7 +243,6 @@ class SoftPatternClassifier(Module):
                             hiddens = self.transition_once(
                                 eps_value,
                                 hiddens,
-                                self_loop_scale,
                                 transition_matrix_val,
                                 zero_paddings[k],
                                 zero_paddings[k])
@@ -301,13 +300,8 @@ class SoftPatternClassifier(Module):
 
         zero_padding = fixed_var(self.semiring.zero(batch_size, num_patterns, 1), self.gpu)
 
-        eps_value = \
-            self.semiring.times(
-                self.semiring.from_float(self.epsilon_scale),
-                self.semiring.from_float(self.epsilon)
-            )
+        eps_value = self.get_eps_value()
 
-        self_loop_scale = self.get_self_loop_scale()
         batch_end_state_idxs = self.end_states.expand(batch_size, num_patterns, 1)
         hiddens = Variable(self.semiring.zero(batch_size,
                                               num_patterns,
@@ -322,7 +316,6 @@ class SoftPatternClassifier(Module):
         for i, transition_matrix in enumerate(transition_matrices):
             hiddens = self.transition_once(eps_value,
                                            hiddens,
-                                           self_loop_scale,
                                            transition_matrix,
                                            zero_padding,
                                            restart_padding)
@@ -348,9 +341,6 @@ class SoftPatternClassifier(Module):
         else:
             return self.mlp.forward(scores)
 
-    def get_self_loop_scale(self):
-        return self.semiring.from_float(self.self_loop_scale)
-
     def get_eps_value(self):
         return self.semiring.times(
             self.semiring.from_float(self.epsilon_scale),
@@ -360,7 +350,6 @@ class SoftPatternClassifier(Module):
     def transition_once(self,
                         eps_value,
                         hiddens,
-                        self_loop_scale,
                         transition_matrix_val,
                         zero_padding,
                         restart_padding):
@@ -387,7 +376,7 @@ class SoftPatternClassifier(Module):
             self.semiring.plus(
                 result,
                 self.semiring.times(
-                    self_loop_scale,
+                    self.self_loop_scale,
                     self.semiring.times(
                         hiddens,
                         transition_matrix_val[:, :, 0, :]
