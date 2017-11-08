@@ -61,7 +61,7 @@ fi
 
 p=$1
 
-p2=`echo $p | tr ',' '_'`
+p2=`echo $p | tr ',' '_' | tr ':' '-'`
 dim=$2
 lr=$3
 t=$4
