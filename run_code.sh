@@ -22,7 +22,7 @@ if [ -z ${WORK+x} ]; then
     WORK=$HOME/
     model_dir=$HOME/work/soft_patterns/
 else
-    model_dir=$WORK/
+    model_dir=$WORK/soft_patterns/
 fi
 
 if [ "$#" -lt 4 ]; then
@@ -99,7 +99,7 @@ function gen_cluster_file {
 
     echo "#!/usr/bin/env bash" > $f
     echo "#SBATCH -J $s" >> $f
-    echo "#SBATCH -o $s.out" >> $f
+    echo "#SBATCH -o $HOME/work/soft_patterns/logs/$s.out" >> $f
     echo "#SBATCH -p normal" >> $f         # specify queue
     echo "#SBATCH -N 1" >> $f              # Number of nodes, not cores (16 cores/node)
     echo "#SBATCH -n 1" >> $f
