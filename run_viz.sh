@@ -15,38 +15,37 @@ function get_param {
     local f=$1
     local name=$2
 
-    val=$(head -1 $f | tr ' ' '\n' | grep "${name}=" | cut -d '=' -f2 | tr -d "'()" | sed 's/,$//')
-    echo $val
+    val=$(head -1 ${f} | tr ' ' '\n' | grep "${name}=" | cut -d '=' -f2 | tr -d "'()" | sed 's/,$//')
+    echo ${val}
 }
 
-f=$model_dir/output.dat
+f="${model_dir}/output.dat"
 
-e=$(get_param $f embedding_file)
-maxplus=$(get_param $f maxplus)
+e=$(get_param ${f} embedding_file)
+maxplus=$(get_param ${f} maxplus)
 
-if [ "$maxplus" == 'True' ]; then
+if [ "${maxplus}" == 'True' ]; then
     maxplus="--maxplus"
 else
     maxplus=''
 fi
 
 
-mlp_hidden_dim=$(get_param $f mlp_hidden_dim)
-num_mlp_layers=$(get_param $f num_mlp_layers)
-patterns=$(get_param $f patterns)
-vd=$(get_param $f vd)
-vl=$(get_param $f vl)
+mlp_hidden_dim=$(get_param ${f} mlp_hidden_dim)
+num_mlp_layers=$(get_param ${f} num_mlp_layers)
+patterns=$(get_param ${f} patterns)
+vd=$(get_param ${f} vd)
+vl=$(get_param ${f} vl)
 
 com="python -u soft_patterns.py  \
-    -e $e \
-    -p $patterns \
-     --vd $vd \
-     --vl $vl \
-     -d $mlp_hidden_dim $maxplus \
-     --num_mlp_layers $num_mlp_layers \
-     -m $model_dir/model_$model_num.pth"
+    -e ${e} \
+    -p ${patterns} \
+     --vd ${vd} \
+     --vl ${vl} \
+     -d ${mlp_hidden_dim} ${maxplus} \
+     --num_mlp_layers ${num_mlp_layers} \
+     -m ${model_dir}/model_${model_num}.pth"
 
-echo $com
+echo ${com}
 
-$com | tee $model_dir/viz_$model_num.dat
-
+${com} | tee ${model_dir}/viz_${model_num}.dat
