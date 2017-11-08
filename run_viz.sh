@@ -2,6 +2,7 @@
 
 if [ "$#" -lt 1 ]; then
     echo "Usage: $0 <model dir> <model number (optional, otherwise select max dev value)>"
+    exit -1
 elif [ "$#" -gt 1 ]; then
     model_num=$2
 else
@@ -10,30 +11,31 @@ fi
 
 model_dir=$1
 
-params=$(head -1 $model_dir/output.dat)
-
 function get_param {
-    local str=$1
+    local f=$1
     local name=$2
 
-    return $(echo $str | tr ' ' '\n' | grep $name | cut -d '=' -f2 | tr -d ",'")
+    val=$(head -1 $f | tr ' ' '\n' | grep "${name}=" | cut -d '=' -f2 | tr -d "'()" | sed 's/,$//')
+    echo $val
 }
 
-e=get_param $params embedding_file
-maxplus=get_param $params maxplus
+f=$model_dir/output.dat
 
-if [ $maxplus == 'True' ]; then
+e=$(get_param $f embedding_file)
+maxplus=$(get_param $f maxplus)
+
+if [ "$maxplus" == 'True' ]; then
     maxplus="--maxplus"
 else
     maxplus=''
 fi
 
 
-mlp_hidden_dim=get_param $params mlp_hidden_dim
-num_mlp_layers=get_param $params num_mlp_layers
-patterns=get_param $params patterns
-vd=get_param $params vd
-vl=get_param $params vl
+mlp_hidden_dim=$(get_param $f mlp_hidden_dim)
+num_mlp_layers=$(get_param $f num_mlp_layers)
+patterns=$(get_param $f patterns)
+vd=$(get_param $f vd)
+vl=$(get_param $f vl)
 
 com="python -u soft_patterns.py  \
     -e $e \
@@ -44,5 +46,7 @@ com="python -u soft_patterns.py  \
      --num_mlp_layers $num_mlp_layers \
      -m $model_dir/model_$model_num.pth"
 
-#$com | tee $model_dir/viz_$model_num.dat
+echo $com
+
+$com | tee $model_dir/viz_$model_num.dat
 
