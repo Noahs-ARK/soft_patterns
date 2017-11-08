@@ -17,6 +17,14 @@ glove_index=0
 gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
 
 
+
+if [ -z ${WORK+x} ]; then
+    WORK=$HOME/resources/
+    model_dir=$HOME/work/soft_patterns/
+else
+    model_dir=$WORK/
+fi
+
 if [ "$#" -lt 4 ]; then
 	echo "Usage: $0 <Pattern spcification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)> <glove index=$glove_index (${gloves[@]})>"
 	exit -1
@@ -62,17 +70,18 @@ glove=${gloves[$glove_index]}
 
 git_tag=$(git log | head -1 | awk '{print $2}' | cut -b-7)
 
-odir=$HOME/work/soft_patterns/output_p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}_$git_tag
+s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}_$git_tag
+odir=$model_dir/output_$s
 
 
 mkdir -p $odir
 
 com="python -u soft_patterns.py        \
-         -e $HOME/resources/glove/glove.${glove}.txt         \
-        --td $HOME/resources/text_cat/stanford_sentiment_binary//train.data         \
-        --tl $HOME/resources/text_cat/stanford_sentiment_binary//train.labels       \
-        --vd $HOME/resources/text_cat/stanford_sentiment_binary//dev.data           \
-        --vl $HOME/resources/text_cat/stanford_sentiment_binary//dev.labels         \
+         -e $WORK/glove/glove.${glove}.txt         \
+        --td $WORK/text_cat/stanford_sentiment_binary//train.data         \
+        --tl $WORK/text_cat/stanford_sentiment_binary//train.labels       \
+        --vd $WORK/text_cat/stanford_sentiment_binary//dev.data           \
+        --vl $WORK/text_cat/stanford_sentiment_binary//dev.labels         \
         --model_save_dir $odir \
         -i 250 \
          -p $p \
@@ -82,4 +91,33 @@ com="python -u soft_patterns.py        \
         -b $b"
 
 echo $com
-$com | tee $odir/output.dat
+
+function gen_cluster_file {
+    local s=$1
+
+    f=$HOME/work/soft_patterns/runs/$s
+
+    echo "SBATCH -J $s" > $f
+    echo "SBATCH -o $s.%j.out" >> $f
+    echo "SBATCH -p normal" >> $f         # specify queue
+    echo "SBATCH -N 1" >> $f              # Number of nodes, not cores (16 cores/node)
+    echo SBATCH -t 24:00:00 >> $f       # max time
+
+    echo "SBATCH --mail-user=roysch@cs.washington.edu" >> $f
+    echo "SBATCH --mail-type=ALL" >> $f
+
+    echo "SBATCH -A TG-DBS110003       # project/allocation number;" >> $f
+    echo "source activate torch3" >> $f
+
+    echo "mpirun $com" >> $f
+
+    echo $f
+}
+
+if [[ "$HOSTNAME" == *.stampede2.tacc.utexas.edu ]]; then
+    f=$(gen_cluster_file $s)
+
+    sbatch $f
+else
+    $com | tee $odir/output.dat
+fi
