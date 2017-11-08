@@ -19,7 +19,7 @@ gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
 
 
 if [ -z ${WORK+x} ]; then
-    WORK=$HOME/resources/
+    WORK=$HOME/
     model_dir=$HOME/work/soft_patterns/
 else
     model_dir=$WORK/
@@ -77,11 +77,11 @@ odir=$model_dir/output_$s
 mkdir -p $odir
 
 com="python -u soft_patterns.py        \
-         -e $WORK/glove/glove.${glove}.txt         \
-        --td $WORK/text_cat/stanford_sentiment_binary//train.data         \
-        --tl $WORK/text_cat/stanford_sentiment_binary//train.labels       \
-        --vd $WORK/text_cat/stanford_sentiment_binary//dev.data           \
-        --vl $WORK/text_cat/stanford_sentiment_binary//dev.labels         \
+         -e $WORK/resources/glove/glove.${glove}.txt         \
+        --td $WORK/resources/text_cat/stanford_sentiment_binary//train.data         \
+        --tl $WORK/resources/text_cat/stanford_sentiment_binary//train.labels       \
+        --vd $WORK/resources/text_cat/stanford_sentiment_binary//dev.data           \
+        --vl $WORK/resources/text_cat/stanford_sentiment_binary//dev.labels         \
         --model_save_dir $odir \
         -i 250 \
          -p $p \
@@ -97,16 +97,18 @@ function gen_cluster_file {
 
     f=$HOME/work/soft_patterns/runs/$s
 
-    echo "SBATCH -J $s" > $f
-    echo "SBATCH -o $s.%j.out" >> $f
-    echo "SBATCH -p normal" >> $f         # specify queue
-    echo "SBATCH -N 1" >> $f              # Number of nodes, not cores (16 cores/node)
-    echo SBATCH -t 24:00:00 >> $f       # max time
+    echo "#!/usr/bin/env bash" > $f
+    echo "#SBATCH -J $s" >> $f
+    echo "#SBATCH -o $s.out" >> $f
+    echo "#SBATCH -p normal" >> $f         # specify queue
+    echo "#SBATCH -N 1" >> $f              # Number of nodes, not cores (16 cores/node)
+    echo "#SBATCH -n 1" >> $f
+    echo "#SBATCH -t 24:00:00" >> $f       # max time
 
-    echo "SBATCH --mail-user=roysch@cs.washington.edu" >> $f
-    echo "SBATCH --mail-type=ALL" >> $f
+    echo "#SBATCH --mail-user=roysch@cs.washington.edu" >> $f
+    echo "#SBATCH --mail-type=ALL" >> $f
 
-    echo "SBATCH -A TG-DBS110003       # project/allocation number;" >> $f
+    echo "#SBATCH -A TG-DBS110003       # project/allocation number;" >> $f
     echo "source activate torch3" >> $f
 
     echo "mpirun $com" >> $f
