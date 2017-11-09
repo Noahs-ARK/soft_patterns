@@ -74,11 +74,11 @@ def visualize_patterns(model,
         def transition_str(norm, neighb, bias):
             return "{:5.2f} * {:<15} + {:5.2f}".format(norm, model.vocab[neighb], bias)
 
-        print("Pattern:", p)
+        print("Pattern:", p, "of length", p_len)
         print("Highest scoring spans:")
         for k, d in enumerate(k_best_doc_idxs):
             score, text = span_text(d)
-            print("{} {:2.3f}  {}".format(k, score, text))
+            print("{} {:2.3f}  {}".format(k, score, text.encode('utf-8')))
         print("self-loops: ",
               ", ".join(
                   transition_str(norm, neighb, bias)

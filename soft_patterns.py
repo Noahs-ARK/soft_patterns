@@ -61,7 +61,7 @@ class Semiring:
 
 
 def neg_infinity(*sizes):
-    return -100 * ones(*sizes)  # not really -inf, shh
+    return -1000000 * ones(*sizes)  # not really -inf, shh
 
 
 # element-wise plus, times
@@ -103,6 +103,8 @@ class SoftPatternClassifier(Module):
                  embeddings,
                  vocab,
                  semiring,
+                 epsilon_scale_value,
+                 self_loop_scale_value,
                  gpu=False,
                  legacy=False):
         super(SoftPatternClassifier, self).__init__()
@@ -140,8 +142,9 @@ class SoftPatternClassifier(Module):
         self.epsilon = self.to_cuda(Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1)))
 
         # TODO: learned? hyperparameter?
-        self.epsilon_scale = self.to_cuda(fixed_var(semiring.one(1)))
-        self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
+        self.epsilon_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.times(semiring.one(1), epsilon_scale_value))))
+        self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.times(semiring.one(1), self_loop_scale_value))))
+
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def get_transition_matrices(self, batch, dropout=None):
@@ -222,7 +225,7 @@ class SoftPatternClassifier(Module):
 
     def get_eps_value(self):
         return self.semiring.times(
-            self.semiring.from_float(self.epsilon_scale),
+            self.epsilon_scale,
             self.semiring.from_float(self.epsilon)
         )
 
@@ -245,12 +248,14 @@ class SoftPatternClassifier(Module):
                      )), 2)
             )
 
+
         result = \
             cat((restart_padding,  # <- Adding the start state
                  self.semiring.times(
                      hiddens[:, :, :-1],
                      transition_matrix_val[:, :, 1, :-1])
                  ), 2)
+
         # Adding self loops (consume a token, stay in same state)
         result = \
             self.semiring.plus(
@@ -489,6 +494,9 @@ def main(args):
 
     semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
 
+    epsilon_scale_value = args.epsilon_scale_value if args.epsilon_scale_value is not None else semiring.one([1])
+    self_loop_scale_value = args.self_loop_scale_value if args.self_loop_scale_value is not None else semiring.one([1])
+
     model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
                                   num_mlp_layers,
@@ -496,6 +504,8 @@ def main(args):
                                   embeddings,
                                   vocab,
                                   semiring,
+                                  epsilon_scale_value,
+                                  self_loop_scale_value,
                                   args.gpu,
                                   args.legacy)
 
@@ -561,6 +571,8 @@ if __name__ == '__main__':
     parser.add_argument("--vl", help="Validation labels file", required=True)
     parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
     parser.add_argument("--clip", help="Gradient clipping", type=float, default=None)
+    parser.add_argument("--epsilon_scale_value", help="Value for epsilon scale (default is Semiring.one)", type=float)
+    parser.add_argument("--self_loop_scale_value", help="Value for self loop scale (default is Semiring.one)", type=float)
     parser.add_argument("--debug", help="Debug", type=int, default=0)
     parser.add_argument("--maxplus",
                         help="Use max-plus semiring instead of plus-times",

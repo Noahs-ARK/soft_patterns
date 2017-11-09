@@ -13,6 +13,8 @@ clip=''
 clips=''
 gpu=''
 file_type=0
+self_loop_scale=0
+epsilon_scale=0
 
 glove_index=0
 gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
@@ -29,7 +31,7 @@ fi
 suffix=''
 
 if [ "$#" -lt 4 ]; then
-	echo "Usage: $0 <Pattern specification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)> <glove index=$glove_index (${gloves[@]})> <file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases)>"
+	echo "Usage: $0 <Pattern specification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)> <glove index=$glove_index (${gloves[@]})> <file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases)> <self loop scale=$self_loop_scale> <epsilon scale=$epsilon_scale>"
 	exit -1
 elif [ "$#" -gt 4 ]; then
 	r=$5
@@ -62,6 +64,12 @@ elif [ "$#" -gt 4 ]; then
 							elif [ "${11}" -eq 2 ]; then
 								suffix='_phrases'
 							fi
+							if [ "$#" -gt 11 ]; then
+							    self_loop_scale=${12}
+                                if [ "$#" -gt 12 ]; then
+                                    epsilon_scale=${13}
+                                fi
+                             fi
 						fi
 					fi
 				fi
@@ -81,7 +89,7 @@ glove=${gloves[$glove_index]}
 
 git_tag=$(git log | head -1 | awk '{print $2}' | cut -b-7)
 
-s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_$git_tag
+s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_slScale${self_loop_scale}_epsScale${epsilon_scale}_$git_tag
 odir=${model_dir}/output_${s}
 
 
@@ -99,6 +107,8 @@ com="python -u soft_patterns.py        \
         -t $t \
         -d $dim \
         -l $lr $rf $mpf $clip $gpu\
+        --epsilon_scale_value $epsilon_scale \
+        --self_loop_scale_value $self_loop_scale \
         -b $b"
 
 echo ${com}

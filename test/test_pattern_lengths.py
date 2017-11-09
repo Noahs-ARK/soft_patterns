@@ -139,6 +139,8 @@ class TestPatternLengths(unittest.TestCase):
                 embeddings,
                 vocab,
                 SEMIRING,
+                SEMIRING.one([1]),
+                SEMIRING.one([1]),
                 GPU,
                 LEGACY
             )
