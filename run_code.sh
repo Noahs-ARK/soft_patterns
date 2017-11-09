@@ -12,6 +12,7 @@ b=1
 clip=''
 clips=''
 gpu=''
+file_type=0
 
 glove_index=0
 gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
@@ -25,8 +26,10 @@ else
     model_dir=$WORK/soft_patterns/
 fi
 
+suffix=''
+
 if [ "$#" -lt 4 ]; then
-	echo "Usage: $0 <Pattern spcification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)> <glove index=$glove_index (${gloves[@]})>"
+	echo "Usage: $0 <Pattern spcification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)> <glove index=$glove_index (${gloves[@]})> <file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases)>"
 	exit -1
 elif [ "$#" -gt 4 ]; then
 	r=$5
@@ -52,6 +55,14 @@ elif [ "$#" -gt 4 ]; then
 					fi
 					if [ "$#" -gt 9 ]; then
 						glove_index=${10}
+						if [ "$#" -gt 10 ]; then
+							echo "wow ${11}"
+							if [ "${11}" -eq 1 ]; then
+								suffix='_case_sensitive'
+							elif [ "${11}" -eq 2 ]; then
+								suffix='_phrases'
+							fi
+						fi
 					fi
 				fi
 			fi
@@ -70,7 +81,7 @@ glove=${gloves[$glove_index]}
 
 git_tag=$(git log | head -1 | awk '{print $2}' | cut -b-7)
 
-s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}_$git_tag
+s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_$git_tag
 odir=$model_dir/output_$s
 
 
@@ -78,9 +89,9 @@ mkdir -p $odir
 
 com="python -u soft_patterns.py        \
          -e $WORK/resources/glove/glove.${glove}.txt         \
-        --td $WORK/resources/text_cat/stanford_sentiment_binary//train.data         \
-        --tl $WORK/resources/text_cat/stanford_sentiment_binary//train.labels       \
-        --vd $WORK/resources/text_cat/stanford_sentiment_binary//dev.data           \
+        --td $WORK/resources/text_cat/stanford_sentiment_binary//train$suffix.data         \
+        --tl $WORK/resources/text_cat/stanford_sentiment_binary//train$suffix.labels       \
+        --vd $WORK/resources/text_cat/stanford_sentiment_binary//dev$suffix.data           \
         --vl $WORK/resources/text_cat/stanford_sentiment_binary//dev.labels         \
         --model_save_dir $odir \
         -i 250 \
