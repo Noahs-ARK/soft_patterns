@@ -94,7 +94,7 @@ def check_dim_and_header(filename):
 
 
 def read_docs(filename, vocab):
-    with open(filename, encoding='utf-8') as input_file:
+    with open(filename, encoding='ISO-8859-1') as input_file:
         docs = [line.rstrip().split() for line in input_file]
         return [vocab.numberize(doc) for doc in docs], docs
 
@@ -105,5 +105,5 @@ def read_labels(filename):
 
 
 def vocab_from_text(filename):
-    with open(filename, encoding='utf-8') as input_file:
+    with open(filename, encoding='ISO-8859-1') as input_file:
         return Vocab.from_docs(line.rstrip().split() for line in input_file)
