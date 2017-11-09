@@ -1,4 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+"""
+A text classification model that feeds the document scores from a bunch of
+soft patterns into an MLP.
+"""
 
 import sys
 import argparse
@@ -72,7 +76,7 @@ class Batch:
         """ Makes a smaller vocab of only words used in the given docs """
         mini_vocab = Vocab.from_docs(docs, default=0)
         max_len = max(len(doc) for doc in docs)
-        self.max_doc_size = max_len
+        self.max_doc_len = max_len
         self.docs = [
             cuda(fixed_var(torch.LongTensor(mini_vocab.numberize(doc) + [0] * (max_len - len(doc)))))
             for doc in docs
@@ -152,12 +156,12 @@ class SoftPatternClassifier(Module):
         ]
 
         batched_transition_scores = torch.cat(batched_transition_scores).view(
-            batch.size(), batch.max_doc_size, self.total_num_patterns, self.num_diags, self.max_pattern_length)
+            batch.size(), batch.max_doc_len, self.total_num_patterns, self.num_diags, self.max_pattern_length)
 
         # transition matrix for each document in batch
         transition_matrices = [
             batched_transition_scores[:, word_index, :, :, :]
-            for word_index in range(batch.max_doc_size)
+            for word_index in range(batch.max_doc_len)
         ]
 
         return transition_matrices
@@ -238,7 +242,8 @@ class SoftPatternClassifier(Module):
                      self.semiring.times(
                          hiddens[:, :, :-1],
                          eps_value  # doesn't depend on token, just state
-                     )), 2))
+                     )), 2)
+            )
 
         result = \
             cat((restart_padding,  # <- Adding the start state
@@ -270,23 +275,17 @@ def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function
     optimizer.zero_grad()
     time0 = monotonic()
     loss = compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, debug, dropout)
-    # print("ls", loss.size())
-
     time1 = monotonic()
     loss.backward()
-
     time2 = monotonic()
     if clip is not None and clip > 0:
         torch.nn.utils.clip_grad_norm(model.parameters(), clip)
-
     optimizer.step()
-
     if debug:
         time3 = monotonic()
-        print("Time in loss: {}, time in backword: {}, time in step: {}".format(round(time1 - time0, 3),
+        print("Time in loss: {}, time in backward: {}, time in step: {}".format(round(time1 - time0, 3),
                                                                                 round(time2 - time1, 3),
                                                                                 round(time3 - time2, 3)))
-
     return loss.data
 
 
@@ -298,7 +297,6 @@ def compute_loss(model, batch, num_classes, gold_output, loss_function, gpu, deb
         time2 = monotonic()
         print("Forward total in loss: {}".format(round(time2 - time1, 3)))
 
-    # print("os", output.dim(), output.size(), "bs", batch.size(), "gs", len(gold_output))
     return loss_function(
         log_softmax(output).view(batch.size(), num_classes),
         to_cuda(gpu)(fixed_var(LongTensor(gold_output)))
@@ -310,14 +308,14 @@ def evaluate_accuracy(model, data, batch_size, gpu, debug=0):
     correct = 0
     num_1s = 0
     for batch in chunked(data, batch_size):
-        batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
-        gold = [x[1] for x in batch]
+        batch_obj = Batch([x for x, y in batch], model.embeddings, to_cuda(gpu))
+        gold = [y for x, y in batch]
         predicted = model.predict(batch_obj, debug)
         num_1s += sum(predicted)
         correct += sum(1 for pred, gold in zip(predicted, gold) if pred == gold)
 
-    print("num predicted 1s", num_1s)
-    print("num gold 1s", sum(gold for _, gold in data))
+    print("num predicted 1s:", num_1s)
+    print("num gold 1s:     ", sum(gold for _, gold in data))
 
     return correct / n
 
@@ -356,9 +354,8 @@ def train(train_data,
     if run_scheduler:
         scheduler = ReduceLROnPlateau(optimizer, 'min', 0.1, 10, True)
 
-
-    best_dev_loss=100000000
-    best_dev_loss_index=-1
+    best_dev_loss = 100000000
+    best_dev_loss_index = -1
     start_time = monotonic()
 
     for it in range(num_iterations):
@@ -405,7 +402,6 @@ def train(train_data,
 
             i += 1
 
-
         print("\n")
 
         finish_iter_time = monotonic()
@@ -443,12 +439,12 @@ def train(train_data,
         if run_scheduler:
             scheduler.step(dev_loss)
 
-
     return model
 
 
 def main(args):
     print(args)
+
     pattern_specs = OrderedDict([int(y) for y in x.split(":")] for x in args.patterns.split(","))
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
@@ -459,11 +455,10 @@ def main(args):
         np.random.seed(args.seed)
 
     dev_vocab = vocab_from_text(args.vd)
-    print("Dev vocab:", len(dev_vocab))
-    if args.td is not None:
-        train_vocab = vocab_from_text(args.td)
-        print("Train vocab:", len(train_vocab))
-        dev_vocab |= train_vocab
+    print("Dev vocab size:", len(dev_vocab))
+    train_vocab = vocab_from_text(args.td)
+    print("Train vocab size:", len(train_vocab))
+    dev_vocab |= train_vocab
 
     vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
@@ -472,33 +467,24 @@ def main(args):
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
 
-    if args.td is not None:
-        if args.tl is None:
-            print("Both training data (--td) and training labels (--tl) required in training mode")
-            return -1
+    np.random.shuffle(dev_data)
+    num_iterations = args.num_iterations
 
-        np.random.shuffle(dev_data)
-        num_iterations = args.num_iterations
+    train_input, _ = read_docs(args.td, vocab)
+    train_labels = read_labels(args.tl)
 
-        train_input, _ = read_docs(args.td, vocab)
-        train_labels = read_labels(args.tl)
+    print("training instances:", len(train_input))
 
-        print("training instances:", len(train_input))
+    num_classes = len(set(train_labels))
 
-        num_classes = len(set(train_labels))
-
-        # truncate data (to debug faster)
-        train_data = list(zip(train_input, train_labels))
-        np.random.shuffle(train_data)
-    else:
-        num_classes = len(set(dev_labels))
+    # truncate data (to debug faster)
+    train_data = list(zip(train_input, train_labels))
+    np.random.shuffle(train_data)
 
     print("num_classes:", num_classes)
 
     if n is not None:
-        if args.td is not None:
-            train_data = train_data[:n]
-
+        train_data = train_data[:n]
         dev_data = dev_data[:n]
 
     semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
@@ -523,31 +509,28 @@ def main(args):
         model.load_state_dict(state_dict)
         model_file_prefix = 'model_retrained'
 
-    if args.td:
-        model_save_dir = args.model_save_dir
+    model_save_dir = args.model_save_dir
 
-        if model_save_dir is not None:
-            if not os.path.exists(model_save_dir):
-                os.makedirs(model_save_dir)
+    if model_save_dir is not None:
+        if not os.path.exists(model_save_dir):
+            os.makedirs(model_save_dir)
 
-        print("Training with", model_file_prefix)
-        train(train_data,
-              dev_data,
-              model,
-              num_classes,
-              model_save_dir,
-              num_iterations,
-              model_file_prefix,
-              args.learning_rate,
-              args.batch_size,
-              args.scheduler,
-              args.gpu,
-              args.clip,
-              args.debug,
-              args.dropout,
-              args.patience)
-    else:
-        model.visualize_pattern(args.batch_size, dev_data, dev_text)
+    print("Training with", model_file_prefix)
+    train(train_data,
+          dev_data,
+          model,
+          num_classes,
+          model_save_dir,
+          num_iterations,
+          model_file_prefix,
+          args.learning_rate,
+          args.batch_size,
+          args.scheduler,
+          args.gpu,
+          args.clip,
+          args.debug,
+          args.dropout,
+          args.patience)
 
     return 0
 
@@ -572,8 +555,8 @@ if __name__ == '__main__':
     parser.add_argument("-c", "--legacy", help="Load legacy models", action='store_true')
     parser.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
     parser.add_argument("--input_model", help="Input model (to run test and not train)")
-    parser.add_argument("--td", help="Train data file")
-    parser.add_argument("--tl", help="Train labels file")
+    parser.add_argument("--td", help="Train data file", required=True)
+    parser.add_argument("--tl", help="Train labels file", required=True)
     parser.add_argument("--vd", help="Validation data file", required=True)
     parser.add_argument("--vl", help="Validation labels file", required=True)
     parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)

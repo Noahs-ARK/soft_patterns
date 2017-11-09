@@ -37,14 +37,15 @@ patterns=$(get_param ${f} patterns)
 vd=$(get_param ${f} vd)
 vl=$(get_param ${f} vl)
 
-com="python -u soft_patterns.py  \
+com="python -u visualize.py  \
     -e ${e} \
     -p ${patterns} \
-     --vd ${vd} \
-     --vl ${vl} \
-     -d ${mlp_hidden_dim} ${maxplus} \
-     --num_mlp_layers ${num_mlp_layers} \
-     -m ${model_dir}/model_${model_num}.pth"
+    --vd ${vd} \
+    --vl ${vl} \
+    -d ${mlp_hidden_dim} \
+    ${maxplus} \
+    --num_mlp_layers ${num_mlp_layers} \
+    --input_model ${model_dir}/model_${model_num}.pth"
 
 echo ${com}
 
