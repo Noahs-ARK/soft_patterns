@@ -37,16 +37,6 @@ def visualize_patterns(model,
 
     scores = get_top_scoring_sequences(model, dev_set, batch_size)
 
-    # 1 above main diagonal
-    # TODO: truncate to appropriate lengths, using model.end_states
-    diags = model.diags.view(num_patterns, model.num_diags, pattern_length, model.word_dim).data
-    biases = model.bias.view(num_patterns, model.num_diags, pattern_length).data
-    self_loop_norms = torch.norm(diags[:, 0, :, :], 2, 2)
-    self_loop_biases = biases[:, 0, :]
-    main_diag_norms = torch.norm(diags[:, 1, :, :], 2, 2)
-    main_diag_biases = biases[:, 1, :]
-    epsilons = model.get_eps_value().data
-
     nearest_neighbors = \
         get_nearest_neighbors(
             model.diags.data,
@@ -55,10 +45,19 @@ def visualize_patterns(model,
             num_patterns,
             model.num_diags,
             pattern_length
-        )[:, 1, :]
+        )
+    diags = model.diags.view(num_patterns, model.num_diags, pattern_length, model.word_dim).data
+    biases = model.bias.view(num_patterns, model.num_diags, pattern_length).data
+    self_loop_norms = torch.norm(diags[:, 0, :, :], 2, 2)
+    self_loop_neighbs = nearest_neighbors[:, 0, :]
+    self_loop_biases = biases[:, 0, :]
+    fwd_one_norms = torch.norm(diags[:, 1, :, :], 2, 2)
+    fwd_one_biases = biases[:, 1, :]
+    fwd_one_neighbs = nearest_neighbors[:, 1, :]
+    epsilons = model.get_eps_value().data
 
     for p in range(num_patterns):
-        p_len = model.end_states[p].data[0]
+        p_len = model.end_states[p].data[0] + 1
         k_best_doc_idxs = \
             sorted(
                 range(len(dev_set)),
@@ -67,21 +66,33 @@ def visualize_patterns(model,
             )[:k_best]
 
         def span_text(doc_idx):
-            score = round(scores[p, doc_idx, SCORE_IDX], 3)
+            score = scores[p, doc_idx, SCORE_IDX]
             start_idx = int(scores[p, doc_idx][START_IDX_IDX])
             end_idx = int(scores[p, doc_idx, END_IDX_IDX])
-            return score, " ".join(dev_text[doc_idx][start_idx:end_idx])
+            return score, " ".join("{:<15}".format(s) for s in dev_text[doc_idx][start_idx:end_idx])
+
+        def transition_str(norm, neighb, bias):
+            return "{:5.2f} * {:<15} + {:5.2f}".format(norm, model.vocab[neighb], bias)
 
         print("Pattern:", p)
+        print("Highest scoring spans:")
         for k, d in enumerate(k_best_doc_idxs):
             score, text = span_text(d)
-            print(k, score, text)
-        print("self-loop norms: ", [round(x, 3) for x in self_loop_norms[p, :p_len]])
-        print("self-loop biases:", [round(x, 3) for x in self_loop_biases[p, :p_len]])
-        print("fwd 1 norms: ", [round(x, 3) for x in main_diag_norms[p, :p_len - 1]])
-        print("fwd 1 biases:", [round(x, 3) for x in main_diag_biases[p, :p_len - 1]])
-        print("fwd 1 nearest neighbors", [model.vocab[x] for x in nearest_neighbors[p, :p_len - 1]])
-        print("epsilons:", [round(x, 3) for x in epsilons[p, :p_len]])
+            print("{} {:2.3f}  {}".format(k, score, text))
+        print("self-loops: ",
+              ", ".join(
+                  transition_str(norm, neighb, bias)
+                  for norm, neighb, bias in zip(self_loop_norms[p, :p_len],
+                                                self_loop_neighbs[p, :p_len],
+                                                self_loop_biases[p, :p_len])))
+        print("fwd 1s:     ",
+              ", ".join(
+                  transition_str(norm, neighb, bias)
+                  for norm, neighb, bias in zip(fwd_one_norms[p, :p_len - 1],
+                                                fwd_one_neighbs[p, :p_len - 1],
+                                                fwd_one_biases[p, :p_len - 1])))
+        print("epsilons:   ",
+              ", ".join("{:31.2f}".format(x) for x in epsilons[p, :p_len - 1]))
         print()
 
 
