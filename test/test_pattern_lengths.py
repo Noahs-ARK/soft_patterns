@@ -8,7 +8,7 @@ from torch import cat, mm, FloatTensor
 from torch.autograd import Variable
 import soft_patterns
 from data import read_embeddings, read_docs, Vocab
-from soft_patterns import fixed_var, SoftPatternClassifier
+from soft_patterns import fixed_var, SoftPatternClassifier, to_cuda
 from test.settings import EMBEDDINGS_FILENAME, DATA_FILENAME, MODEL_FILENAME, PATTERN_SPECS, MLP_HIDDEN_DIM, \
     NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, LEGACY
 
@@ -19,11 +19,11 @@ np.random.seed(100)
 def forward(model, batch):
     """ old version, for reference """
     transition_matrices = get_transition_matrices(model, batch)
-    scores = Variable(model.semiring.zero(batch.size(), model.total_num_patterns).type(model.dtype))
+    scores = Variable(model.semiring.zero(batch.size(), model.total_num_patterns))
 
     # to add start state for each word in the document.
-    restart_padding = fixed_var(model.semiring.one(model.total_num_patterns, 1), model.gpu)
-    zero_padding = fixed_var(model.semiring.zero(model.total_num_patterns, 1), model.gpu)
+    restart_padding = fixed_var(model.semiring.one(model.total_num_patterns, 1))
+    zero_padding = fixed_var(model.semiring.zero(model.total_num_patterns, 1))
     eps_value = \
         model.semiring.times(
             model.semiring.from_float(model.epsilon_scale),
@@ -34,8 +34,8 @@ def forward(model, batch):
     # Different documents in batch
     for doc_index in range(len(transition_matrices)):
         # Start state
-        hiddens = Variable(model.semiring.zero(model.total_num_patterns, model.max_pattern_length).type(model.dtype))
-        hiddens[:, 0] = model.semiring.one(model.total_num_patterns, 1).type(model.dtype)
+        hiddens = Variable(model.semiring.zero(model.total_num_patterns, model.max_pattern_length))
+        hiddens[:, 0] = model.semiring.one(model.total_num_patterns, 1)
         all_hiddens.append(hiddens)
         # For each token in document
         for transition_matrix_val in transition_matrices[doc_index]:
@@ -66,9 +66,6 @@ def get_transition_matrices(model, batch):
     mm_res = mm(model.diags, batch.embeddings_matrix)
     transition_probs = \
         model.semiring.from_float(mm_res + model.bias.expand(model.bias.size()[0], mm_res.size()[1])).t()
-
-    if model.gpu:
-        transition_probs = transition_probs.cuda()
 
     # transition matrix for each document in batch
     transition_matrices = [
@@ -153,8 +150,8 @@ class TestPatternLengths(unittest.TestCase):
         same as doing it manually
         """
         test_data = [self.data[0]]
-        batch = Batch(test_data, self.embeddings, GPU)
-        batch2 = soft_patterns.Batch(test_data, self.embeddings, GPU)
+        batch = Batch(test_data, self.embeddings)
+        batch2 = soft_patterns.Batch(test_data, self.embeddings, to_cuda(GPU))
         expected, transition_expected, all_hiddens_expected = forward(self.model, batch)
         actual, transition_actual, all_hiddens_actual = self.model.forward(batch2, 3)
 
@@ -181,12 +178,12 @@ class TestPatternLengths(unittest.TestCase):
 
 
 class Batch:
-    def __init__(self, docs, embeddings, gpu):
+    def __init__(self, docs, embeddings):
         """ Makes a smaller vocab of only words used in the given docs """
         mini_vocab = Vocab.from_docs(docs, default=0)
         self.docs = [mini_vocab.numberize(doc) for doc in docs]
         local_embeddings = [embeddings[i] for i in mini_vocab.names]
-        self.embeddings_matrix = fixed_var(FloatTensor(local_embeddings).t(), gpu)
+        self.embeddings_matrix = fixed_var(FloatTensor(local_embeddings).t())
 
     def size(self):
         return len(self.docs)

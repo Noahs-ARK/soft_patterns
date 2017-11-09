@@ -3,7 +3,7 @@
 Text classification baseline models.
 """
 import argparse
-from soft_patterns import fixed_var, train
+from soft_patterns import fixed_var, train, to_cuda
 import numpy as np
 import os
 import torch
@@ -29,13 +29,9 @@ class DanClassifier(Module):
                  gpu=False,
                  dropout=0.1):
         super(DanClassifier, self).__init__()
-        self.embeddings = fixed_var(FloatTensor(embeddings), gpu)
+        self.to_cuda = to_cuda(gpu)
+        self.embeddings = self.to_cuda(fixed_var(FloatTensor(embeddings)))
         self.word_dim = len(embeddings[0])
-        self.dtype = FloatTensor
-        if gpu:
-            self.embeddings.cuda()
-            self.dtype = cuda.FloatTensor
-        self.gpu = gpu
         self.mlp = MLP(self.word_dim,
                        mlp_hidden_dim,
                        num_mlp_layers,
@@ -120,9 +116,6 @@ def main(args):
                           embeddings,
                           args.gpu,
                           dropout)
-
-    if args.gpu:
-        model.cuda()
 
     model_file_prefix = 'model'
     # Loading model
