@@ -140,8 +140,8 @@ class SoftPatternClassifier(Module):
         self.epsilon = self.to_cuda(Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1)))
 
         # TODO: learned? hyperparameter?
-        self.epsilon_scale = self.to_cuda(fixed_var(FloatTensor([0])))
-        self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(FloatTensor([0]))))
+        self.epsilon_scale = self.to_cuda(fixed_var(semiring.one(1)))
+        self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def get_transition_matrices(self, batch, dropout=None):
