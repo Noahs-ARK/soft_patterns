@@ -6,7 +6,13 @@ if [ "$#" -lt 1 ]; then
 elif [ "$#" -gt 1 ]; then
     model_num=$2
 else
-    model_num=$(grep loss $1/output.dat | awk '{print $2" "$NF}' | sort -rnk2 | head -1 | awk '{print $1}')
+    i=1
+    model_num=-1
+    while [ ! -e ${1}/model_${model_num}.pth ];
+    do
+	model_num=$(grep loss $1/output.dat | awk '{print $2" "$NF}' | sort -rnk2 | sed "${i}q;d" | awk '{print $1}')
+	let i++
+    done
 fi
 
 model_dir=$1
