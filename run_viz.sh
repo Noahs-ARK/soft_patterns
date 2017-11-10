@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 if [ "$#" -lt 1 ]; then
     echo "Usage: $0 <model dir> <model number (optional, otherwise select max dev value)>"
     exit -1

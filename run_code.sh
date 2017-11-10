@@ -23,10 +23,23 @@ gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
 
 if [ -z ${WORK+x} ]; then
     WORK=$HOME/
-    model_dir=$HOME/work/soft_patterns/
+    if [ -z ${model_dir+x} ]; then
+        model_dir=$HOME/work/soft_patterns
+    fi
 else
-    model_dir=${WORK}/soft_patterns/
+    if [ -z ${model_dir+x} ]; then
+        model_dir=${WORK}/soft_patterns
+    fi
 fi
+
+if [ -z ${data_dir+x} ]; then
+    data_dir=${WORK}/resources
+fi
+
+sst_dir="${data_dir}/text_cat/stanford_sentiment_binary"
+glove_dir="${data_dir}/glove"
+
+
 
 suffix=''
 
@@ -89,18 +102,18 @@ glove=${gloves[$glove_index]}
 
 git_tag=$(git log | head -1 | awk '{print $2}' | cut -b-7)
 
-s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_slScale${self_loop_scale}_epsScale${epsilon_scale}_$git_tag
+s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_slScale${self_loop_scale}_epsScale${epsilon_scale}_${git_tag}
 odir=${model_dir}/output_${s}
 
 
 mkdir -p ${odir}
 
 com="python -u soft_patterns.py        \
-         -e $WORK/resources/glove/glove.${glove}.txt         \
-        --td $WORK/resources/text_cat/stanford_sentiment_binary//train$suffix.data         \
-        --tl $WORK/resources/text_cat/stanford_sentiment_binary//train$suffix.labels       \
-        --vd $WORK/resources/text_cat/stanford_sentiment_binary//dev$suffix.data           \
-        --vl $WORK/resources/text_cat/stanford_sentiment_binary//dev.labels         \
+         -e ${glove_dir}/glove.${glove}.txt         \
+        --td ${sst_dir}/train$suffix.data    \
+        --tl ${sst_dir}/train$suffix.labels  \
+        --vd ${sst_dir}/dev$suffix.data      \
+        --vl ${sst_dir}/dev.labels           \
         --model_save_dir $odir \
         -i 250 \
          -p $p \
