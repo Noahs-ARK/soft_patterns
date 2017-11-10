@@ -93,9 +93,11 @@ def check_dim_and_header(filename):
             return len(first_line) - 1, False
 
 
-def read_docs(filename, vocab):
+def read_docs(filename, vocab, min_length):
     with open(filename, encoding='ISO-8859-1') as input_file:
         docs = [line.rstrip().split() for line in input_file]
+        docs = [x for x in docs if len(x) >= min_length]
+
         return [vocab.numberize(doc) for doc in docs], docs
 
 
