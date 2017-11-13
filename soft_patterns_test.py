@@ -9,7 +9,7 @@ import sys
 import torch
 from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
-from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring
+from soft_patterns import MaxPlusSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring
 from util import chunked
 
 SCORE_IDX = 0
@@ -45,6 +45,9 @@ def main(args):
 
     semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
 
+    epsilon_scale_value = args.epsilon_scale_value if args.epsilon_scale_value is not None else semiring.one([1])
+    self_loop_scale_value = args.self_loop_scale_value if args.self_loop_scale_value is not None else semiring.one([1])
+
     model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
                                   num_mlp_layers,
@@ -52,6 +55,8 @@ def main(args):
                                   embeddings,
                                   vocab,
                                   semiring,
+                                  epsilon_scale_value,
+                                  self_loop_scale_value,
                                   args.gpu,
                                   False)
 
@@ -64,25 +69,9 @@ def main(args):
 
     test_acc = evaluate_accuracy(model, dev_data, args.batch_size, args.gpu)
 
-    print("Test accuray: {:>8,.3f}%", test_acc)
+    print("Test accuray: {:>8,.3f}%".format(test_acc))
 
     return 0
-
-def evaluate_accuracy(model, data, batch_size, gpu, debug=0):
-    n = float(len(data))
-    correct = 0
-    num_1s = 0
-    for batch in chunked(data, batch_size):
-        batch_obj = Batch([x for x, y in batch], model.embeddings, to_cuda(gpu))
-        gold = [y for x, y in batch]
-        predicted = model.predict(batch_obj, debug)
-        num_1s += sum(predicted)
-        correct += sum(1 for pred, gold in zip(predicted, gold) if pred == gold)
-
-    print("num predicted 1s:", num_1s)
-    print("num gold 1s:     ", sum(gold for _, gold in data))
-
-    return correct / n
 
 
 if __name__ == '__main__':
@@ -103,5 +92,7 @@ if __name__ == '__main__':
     parser.add_argument("--maxplus",
                         help="Use max-plus semiring instead of plus-times",
                         default=False, action='store_true')
+    parser.add_argument("--epsilon_scale_value", help="Value for epsilon scale (default is Semiring.one)", type=float)
+    parser.add_argument("--self_loop_scale_value", help="Value for self loop scale (default is Semiring.one)", type=float)
 
     sys.exit(main(parser.parse_args()))
