@@ -1,4 +1,5 @@
 """ Utility functions """
+import numpy as np
 
 
 def identity(x):
@@ -31,3 +32,20 @@ def chunked(xs, chunk_size):
         xs[i:i + chunk_size]
         for i in range(0, len(xs), chunk_size)
     ]
+
+def chunked_sorted(xs, chunk_size):
+    """ Splits a list into `chunk_size`-sized pieces. """
+    # print(xs[:3])
+    xs = list(xs)
+
+    xs = sorted(xs, key=lambda x: len(x[0]))
+    # print(xs[:3])
+
+    chunks = [
+        xs[i:i + chunk_size]
+        for i in range(0, len(xs), chunk_size)
+    ]
+
+    np.random.shuffle(chunks)
+
+    return chunks

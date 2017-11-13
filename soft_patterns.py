@@ -23,7 +23,7 @@ from tensorboardX import SummaryWriter
 
 from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP
-from util import chunked, identity
+from util import chunked_sorted, identity
 
 
 def to_cuda(gpu):
@@ -315,15 +315,15 @@ def evaluate_accuracy(model, data, batch_size, gpu, debug=0):
     n = float(len(data))
     correct = 0
     num_1s = 0
-    for batch in chunked(data, batch_size):
+    for batch in chunked_sorted(data, batch_size):
         batch_obj = Batch([x for x, y in batch], model.embeddings, to_cuda(gpu))
         gold = [y for x, y in batch]
         predicted = model.predict(batch_obj, debug)
-        num_1s += sum(predicted)
+        num_1s += predicted.count(1)
         correct += sum(1 for pred, gold in zip(predicted, gold) if pred == gold)
 
     print("num predicted 1s:", num_1s)
-    print("num gold 1s:     ", sum(gold for _, gold in data))
+    print("num gold 1s:     ", sum(gold==1 for _, gold in data))
 
     return correct / n
 
@@ -371,7 +371,7 @@ def train(train_data,
 
         loss = 0.0
         i = 0
-        for batch in chunked(train_data, batch_size):
+        for batch in chunked_sorted(train_data, batch_size):
             batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
             gold = [x[1] for x in batch]
             loss += torch.sum(
@@ -398,7 +398,7 @@ def train(train_data,
 
         dev_loss = 0.0
         i = 0
-        for batch in chunked(dev_data, batch_size):
+        for batch in chunked_sorted(dev_data, batch_size):
             batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
             gold = [x[1] for x in batch]
             dev_loss += torch.sum(compute_loss(model, batch_obj, num_classes, gold, loss_function, gpu, debug).data)
