@@ -73,7 +73,7 @@ def evaluate_accuracy(model, data, batch_size, gpu, debug=0):
     correct = 0
     num_1s = 0
     for batch in chunked(data, batch_size):
-        batch_obj = Batch([x for x, y in batch], model.embeddings, to_cuda(gpu))
+        batch_obj = Batch([x for x, y in batch], model.embeddings, model.to_cuda(gpu))
         gold = [y for x, y in batch]
         predicted = model.predict(batch_obj, debug)
         num_1s += sum(predicted)
