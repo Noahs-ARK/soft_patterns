@@ -96,3 +96,4 @@ if __name__ == '__main__':
     parser.add_argument("--self_loop_scale_value", help="Value for self loop scale (default is Semiring.one)", type=float)
 
     sys.exit(main(parser.parse_args()))
+

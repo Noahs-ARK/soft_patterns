@@ -44,7 +44,7 @@ glove_dir="${data_dir}/glove"
 suffix=''
 
 if [ "$#" -lt 4 ]; then
-	echo "Usage: $0 <Pattern specification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)> <glove index=$glove_index (${gloves[@]})> <file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases)> <self loop scale=$self_loop_scale> <epsilon scale=$epsilon_scale>"
+	echo "Usage: $0 <Pattern specification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp> <batch size=$b> <gradient clipping (optional)> <gpu (optional)> <glove index=$glove_index (${gloves[@]})> <file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases, 3 -- fine grained categories, 4 -- fine grained categories with phrases)> <self loop scale=$self_loop_scale> <epsilon scale=$epsilon_scale>"
 	exit -1
 elif [ "$#" -gt 4 ]; then
 	r=$5
@@ -76,6 +76,13 @@ elif [ "$#" -gt 4 ]; then
 								suffix='_case_sensitive'
 							elif [ "${11}" -eq 2 ]; then
 								suffix='_phrases'
+							elif [ "${11}" -eq 3 ]; then
+								suffix='_fine'
+							elif [ "${11}" -eq 4 ]; then
+								suffix='_phrases_fine'
+							else
+								echo "Expected a number between 0-4 for file type"
+								exit -2
 							fi
 							if [ "$#" -gt 11 ]; then
 							    self_loop_scale=${12}
