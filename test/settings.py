@@ -11,4 +11,3 @@ NUM_CLASSES = 2
 MLP_HIDDEN_DIM = 10
 SEMIRING = MaxPlusSemiring
 GPU = False
-LEGACY = False

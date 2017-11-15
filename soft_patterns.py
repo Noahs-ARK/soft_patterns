@@ -5,7 +5,7 @@ soft patterns into an MLP.
 """
 
 import sys
-import argparse
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
 from time import monotonic
 
@@ -21,7 +21,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from tensorboardX import SummaryWriter
 
-from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab, UNK_TOKEN
+from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP
 from util import chunked_sorted, identity
 
@@ -94,7 +94,6 @@ class Batch:
         self.doc_lens = cuda(torch.LongTensor([len(doc) for doc in docs]))
         local_embeddings = [embeddings[i] for i in mini_vocab.names]
 
-
         self.embeddings_matrix = cuda(fixed_var(FloatTensor(local_embeddings).t()))
 
     def size(self):
@@ -117,8 +116,7 @@ class SoftPatternClassifier(Module):
                  semiring,
                  epsilon_scale_value,
                  self_loop_scale_value,
-                 gpu=False,
-                 legacy=False):
+                 gpu=False):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
         self.vocab = vocab
@@ -128,7 +126,7 @@ class SoftPatternClassifier(Module):
 
         self.total_num_patterns = sum(pattern_specs.values())
 
-        self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes, legacy)
+        self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes)
 
         self.word_dim = len(embeddings[0])
         self.num_diags = 2  # self-loops and single-forward-steps
@@ -333,7 +331,7 @@ def evaluate_accuracy(model, data, batch_size, gpu, debug=0):
         correct += sum(1 for pred, gold in zip(predicted, gold) if pred == gold)
 
     print("num predicted 1s:", num_1s)
-    print("num gold 1s:     ", sum(gold==1 for _, gold in data))
+    print("num gold 1s:     ", sum(gold == 1 for _, gold in data))
 
     return correct / n
 
@@ -525,8 +523,7 @@ def main(args):
                                   semiring,
                                   epsilon_scale_value,
                                   self_loop_scale_value,
-                                  args.gpu,
-                                  args.legacy)
+                                  args.gpu)
 
     if args.gpu:
         model.to_cuda()
@@ -565,41 +562,50 @@ def main(args):
     return 0
 
 
+def soft_pattern_arg_parser():
+    p = ArgumentParser(add_help=False)
+    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
+    p.add_argument("-p", "--patterns",
+                   help="Pattern lengths and numbers: a comma separated list of length:number pairs",
+                   default="5:50,4:50,3:50,2:50")
+    p.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
+    p.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
+    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
+    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
+    p.add_argument("--epsilon_scale_value", help="Value for epsilon scale (default is Semiring.one)", type=float)
+    p.add_argument("--self_loop_scale_value", help="Value for self loop scale (default is Semiring.one)", type=float)
+    p.add_argument("--maxplus",
+                   help="Use max-plus semiring instead of plus-times",
+                   default=False, action='store_true')
+    p.add_argument("--maxtimes",
+                   help="Use max-times semiring instead of plus-times",
+                   default=False, action='store_true')
+    return p
+
+
+def training_arg_parser():
+    p = ArgumentParser(add_help=False)
+    p.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
+    p.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
+    p.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
+    p.add_argument("--patience", help="Patience parameter (for early stopping)", type=int, default=30)
+    p.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
+    p.add_argument("-m", "--model_save_dir", help="where to save the trained model")
+    p.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
+    p.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
+    p.add_argument("--input_model", help="Input model (to run test and not train)")
+    p.add_argument("--td", help="Train data file", required=True)
+    p.add_argument("--tl", help="Train labels file", required=True)
+    p.add_argument("--vd", help="Validation data file", required=True)
+    p.add_argument("--vl", help="Validation labels file", required=True)
+    p.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
+    p.add_argument("--clip", help="Gradient clipping", type=float, default=None)
+    p.add_argument("--debug", help="Debug", type=int, default=0)
+    return p
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    parser.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    parser.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
-    parser.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
-    parser.add_argument("-p", "--patterns",
-                        help="Pattern lengths and numbers: a comma separated list of length:number pairs",
-                        default="5:50,4:50,3:50,2:50")
-    parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
-    parser.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
-    parser.add_argument("--patience", help="Patience parameter (for early stopping)", type=int, default=30)
-    parser.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
-    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
-    parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
-    parser.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
-    parser.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
-    parser.add_argument("-c", "--legacy", help="Load legacy models", action='store_true')
-    parser.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    parser.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
-    parser.add_argument("--input_model", help="Input model (to run test and not train)")
-    parser.add_argument("--td", help="Train data file", required=True)
-    parser.add_argument("--tl", help="Train labels file", required=True)
-    parser.add_argument("--vd", help="Validation data file", required=True)
-    parser.add_argument("--vl", help="Validation labels file", required=True)
-    parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
-    parser.add_argument("--clip", help="Gradient clipping", type=float, default=None)
-    parser.add_argument("--epsilon_scale_value", help="Value for epsilon scale (default is Semiring.one)", type=float)
-    parser.add_argument("--self_loop_scale_value", help="Value for self loop scale (default is Semiring.one)", type=float)
-    parser.add_argument("--debug", help="Debug", type=int, default=0)
-    parser.add_argument("--maxplus",
-                        help="Use max-plus semiring instead of plus-times",
-                        default=False, action='store_true')
-    parser.add_argument("--maxtimes",
-                        help="Use max-times semiring instead of plus-times",
-                        default=False, action='store_true')
-
+    parser = ArgumentParser(description=__doc__,
+                            formatter_class=ArgumentDefaultsHelpFormatter,
+                            parents=[soft_pattern_arg_parser(), training_arg_parser()])
     sys.exit(main(parser.parse_args()))

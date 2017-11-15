@@ -59,6 +59,7 @@ or
     --vd "${sst_dir}/dev.data" \
     --vl "${sst_dir}/dev.labels" \
     -p "5:50,4:50,3:50,2:50" \
+    -b 1000 \
     --maxplus \
     --input_model "${model_dir}/output_p5-50_4-50_3-50_2-50_d10_l1e-3_t0.2_r_b_6B.100d_slScale0_epsScale0_3d79c4f/model_69.pth"
 ```
