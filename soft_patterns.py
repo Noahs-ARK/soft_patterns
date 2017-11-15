@@ -218,9 +218,6 @@ class SoftPatternClassifier(Module):
             time3 = monotonic()
             print("MM: {}, other: {}".format(round(time2 - time1, 3), round(time3 - time2, 3)))
 
-        if dropout is not None and dropout:
-            scores = dropout(scores)
-
         if debug % 4 == 3:
             return self.mlp.forward(scores), transition_matrices, all_hiddens
         else:
