@@ -42,6 +42,9 @@ def main(args):
     print("Read", len(patterns), "patterns")
     patterns = {k: patterns[k] for k in patterns.keys() if patterns[k] >= thr}
 
+    for p in patterns.keys():
+        p.set_freq(patterns[p])
+
     print("Read", len(patterns), "patterns")
 
     trie = build_trie(patterns)
@@ -49,7 +52,7 @@ def main(args):
     # print([x.__str__() for x in patterns if x.size() >= 3])
 
     train_features = lil_matrix((len(train_docs), len(patterns)), dtype=np.int8)
-    dev_features = lil_matrix(len(dev_docs), len(patterns))
+    dev_features = lil_matrix((len(dev_docs), len(patterns)))
 
     for (i, doc) in enumerate(train_docs):
         add_patterns(doc, words, patterns, args.max_pattern_len, trie, train_features, i)
@@ -152,7 +155,7 @@ def add_patterns(doc, words, patterns, max_size, trie=None, features=None, index
                         new_stack.append(p)
                 else:
                     if INDEX_TOKEN in local_trie:
-                        features[index, local_trie[INDEX_TOKEN]] = 1
+                        features[index, local_trie[INDEX_TOKEN]] = pobj.score()
 
                         if len(wobj.senses) == 2:
                             new_stack.append([p, local_trie])
@@ -179,6 +182,12 @@ class Pattern():
         p.hfws.append(hfw)
 
         return p
+
+    def set_freq(self, freq):
+        self.freq = freq
+
+    def score(self):
+        return 1./self.freq
 
     def size(self):
         return len(self.hfws)
