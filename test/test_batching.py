@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
-from soft_patterns import Batch, SoftPatternClassifier, read_docs, read_embeddings, chunked, to_cuda
+from soft_patterns import Batch, SoftPatternClassifier, read_docs, read_embeddings, to_cuda
 import unittest
 import numpy as np
 import torch
 
 from test.settings import EMBEDDINGS_FILENAME, DATA_FILENAME, MODEL_FILENAME, PATTERN_SPECS, MLP_HIDDEN_DIM, \
-    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, LEGACY
+    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU
+from util import chunked
 
 torch.manual_seed(100)
 np.random.seed(100)
@@ -16,7 +17,8 @@ class TestBatching(unittest.TestCase):
     def setUp(self):
         vocab, embeddings, word_dim = read_embeddings(EMBEDDINGS_FILENAME)
         self.embeddings = embeddings
-        self.data = read_docs(DATA_FILENAME, vocab)[0]
+        max_pattern_length = max(list(PATTERN_SPECS.keys()))
+        self.data = read_docs(DATA_FILENAME, vocab, max_pattern_length / 2)[0]
         state_dict = torch.load(MODEL_FILENAME)
         self.model = \
             SoftPatternClassifier(
