@@ -9,7 +9,8 @@ import sys
 import torch
 from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
-from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring
+from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
+    LogSpaceMaxTimesSemiring
 from util import chunked
 
 SCORE_IDX = 0
@@ -182,7 +183,10 @@ def main(args):
     num_classes = len(set(dev_labels))
     print("num_classes:", num_classes)
 
-    semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
+    semiring = \
+        MaxPlusSemiring if args.maxplus else (
+            LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
+        )
 
     model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
@@ -223,6 +227,9 @@ if __name__ == '__main__':
     parser.add_argument("--vl", help="Validation labels file", required=True)
     parser.add_argument("--maxplus",
                         help="Use max-plus semiring instead of plus-times",
+                        default=False, action='store_true')
+    parser.add_argument("--maxtimes",
+                        help="Use max-times semiring instead of plus-times",
                         default=False, action='store_true')
 
     sys.exit(main(parser.parse_args()))

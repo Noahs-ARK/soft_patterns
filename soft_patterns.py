@@ -52,12 +52,14 @@ class Semiring:
                  one,
                  plus,
                  times,
-                 from_float):
+                 from_float,
+                 to_float):
         self.zero = zero
         self.one = one
         self.plus = plus
         self.times = times
         self.from_float = from_float
+        self.to_float = to_float
 
 
 def neg_infinity(*sizes):
@@ -65,10 +67,12 @@ def neg_infinity(*sizes):
 
 
 # element-wise plus, times
-ProbSemiring = Semiring(zeros, ones, torch.add, torch.mul, sigmoid)
+ProbSemiring = Semiring(zeros, ones, torch.add, torch.mul, sigmoid, identity)
 
 # element-wise max, plus
-MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity)
+MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity, identity)
+# element-wise max, times. in log-space
+LogSpaceMaxTimesSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, lambda x: torch.log(torch.sigmoid(x)), torch.exp)
 
 
 class Batch:
@@ -226,6 +230,8 @@ class SoftPatternClassifier(Module):
             time3 = monotonic()
             print("MM: {}, other: {}".format(round(time2 - time1, 3), round(time3 - time2, 3)))
 
+        scores = self.semiring.to_float(scores)
+
         if debug % 4 == 3:
             return self.mlp.forward(scores), transition_matrices, all_hiddens
         else:
@@ -255,7 +261,6 @@ class SoftPatternClassifier(Module):
                          eps_value  # doesn't depend on token, just state
                      )), 2)
             )
-
 
         result = \
             cat((restart_padding,  # <- Adding the start state
@@ -503,7 +508,10 @@ def main(args):
         train_data = train_data[:n]
         dev_data = dev_data[:n]
 
-    semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
+    semiring = \
+        MaxPlusSemiring if args.maxplus else (
+            LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
+        )
 
     epsilon_scale_value = args.epsilon_scale_value if args.epsilon_scale_value is not None else semiring.one([1])
     self_loop_scale_value = args.self_loop_scale_value if args.self_loop_scale_value is not None else semiring.one([1])
@@ -589,6 +597,9 @@ if __name__ == '__main__':
     parser.add_argument("--debug", help="Debug", type=int, default=0)
     parser.add_argument("--maxplus",
                         help="Use max-plus semiring instead of plus-times",
+                        default=False, action='store_true')
+    parser.add_argument("--maxtimes",
+                        help="Use max-times semiring instead of plus-times",
                         default=False, action='store_true')
 
     sys.exit(main(parser.parse_args()))
