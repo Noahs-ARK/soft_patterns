@@ -71,7 +71,6 @@ elif [ "$#" -gt 4 ]; then
 					if [ "$#" -gt 9 ]; then
 						glove_index=${10}
 						if [ "$#" -gt 10 ]; then
-							echo "wow ${11}"
 							if [ "${11}" -eq 1 ]; then
 								suffix='_case_sensitive'
 							elif [ "${11}" -eq 2 ]; then
@@ -80,8 +79,8 @@ elif [ "$#" -gt 4 ]; then
 								suffix='_fine'
 							elif [ "${11}" -eq 4 ]; then
 								suffix='_phrases_fine'
-							else
-								echo "Expected a number between 0-4 for file type"
+							elif [ "${11}" -ne 0 ]; then
+								echo "Expected a number between 0-4 for file type, got ${11}"
 								exit -2
 							fi
 							if [ "$#" -gt 11 ]; then

@@ -21,7 +21,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from tensorboardX import SummaryWriter
 
-from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
+from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab, UNK_TOKEN
 from mlp import MLP
 from util import chunked_sorted, identity
 
@@ -72,17 +72,25 @@ MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity)
 
 
 class Batch:
-    def __init__(self, docs, embeddings, cuda):
+    def __init__(self, docs, embeddings, cuda, dropout=0):
         """ Makes a smaller vocab of only words used in the given docs """
         mini_vocab = Vocab.from_docs(docs, default=0)
         max_len = max(len(doc) for doc in docs)
         self.max_doc_len = max_len
+        if dropout:
+            docs = [
+                [0 if np.random.rand() < dropout else x for x in doc]
+            for doc in docs
+        ]
+
         self.docs = [
             cuda(fixed_var(torch.LongTensor(mini_vocab.numberize(doc) + [0] * (max_len - len(doc)))))
             for doc in docs
         ]
         self.doc_lens = cuda(torch.LongTensor([len(doc) for doc in docs]))
         local_embeddings = [embeddings[i] for i in mini_vocab.names]
+
+
         self.embeddings_matrix = cuda(fixed_var(FloatTensor(local_embeddings).t()))
 
     def size(self):
@@ -151,7 +159,7 @@ class SoftPatternClassifier(Module):
         transition_scores = \
             self.semiring.from_float(mm(self.diags, batch.embeddings_matrix) + self.bias).t()
 
-        if dropout:
+        if dropout is not None and dropout:
             transition_scores = dropout(transition_scores)
 
         batched_transition_scores = [
@@ -339,6 +347,7 @@ def train(train_data,
           clip=None,
           debug=0,
           dropout=0,
+          word_dropout=0,
           patience=1000):
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
@@ -369,7 +378,7 @@ def train(train_data,
         loss = 0.0
         i = 0
         for batch in chunked_sorted(train_data, batch_size):
-            batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
+            batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu), word_dropout)
             gold = [x[1] for x in batch]
             loss += torch.sum(
                 train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip, debug, dropout)
@@ -542,6 +551,7 @@ def main(args):
           args.clip,
           args.debug,
           args.dropout,
+          args.word_dropout,
           args.patience)
 
     return 0
@@ -566,6 +576,7 @@ if __name__ == '__main__':
     parser.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
     parser.add_argument("-c", "--legacy", help="Load legacy models", action='store_true')
     parser.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
+    parser.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
     parser.add_argument("--input_model", help="Input model (to run test and not train)")
     parser.add_argument("--td", help="Train data file", required=True)
     parser.add_argument("--tl", help="Train labels file", required=True)
