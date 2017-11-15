@@ -10,7 +10,7 @@ import soft_patterns
 from data import read_embeddings, read_docs, Vocab
 from soft_patterns import fixed_var, SoftPatternClassifier, to_cuda
 from test.settings import EMBEDDINGS_FILENAME, DATA_FILENAME, MODEL_FILENAME, PATTERN_SPECS, MLP_HIDDEN_DIM, \
-    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, LEGACY
+    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU
 
 torch.manual_seed(100)
 np.random.seed(100)
@@ -141,8 +141,7 @@ class TestPatternLengths(unittest.TestCase):
                 SEMIRING,
                 SEMIRING.one([1]),
                 SEMIRING.one([1]),
-                GPU,
-                LEGACY
+                GPU
             )
         self.model.load_state_dict(state_dict)
 

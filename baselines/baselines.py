@@ -35,8 +35,7 @@ class DanClassifier(Module):
         self.mlp = MLP(self.word_dim,
                        mlp_hidden_dim,
                        num_mlp_layers,
-                       num_classes,
-                       legacy=False)
+                       num_classes)
         self.dropout = Dropout2d(dropout) if dropout else None
         print("# params:", sum(p.nelement() for p in self.parameters()))
 

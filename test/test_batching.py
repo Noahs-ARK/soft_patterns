@@ -29,8 +29,7 @@ class TestBatching(unittest.TestCase):
                 SEMIRING,
                 SEMIRING.one([1]),
                 SEMIRING.one([1]),
-                GPU,
-                LEGACY
+                GPU
             )
         self.model.load_state_dict(state_dict)
         self.batch_sizes = [1, 2, 4, 5, 10, 20]
