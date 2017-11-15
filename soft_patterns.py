@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 -u
 """
 A text classification model that feeds the document scores from a bunch of
 soft patterns into an MLP.

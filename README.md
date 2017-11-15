@@ -32,10 +32,10 @@ LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/Users/sam/anaconda3/pkgs/mkl-11.3.3-0/lib"
     --vl ${sst_dir}/dev.labels \
     -p "5:50,4:50,3:50,2:50" \
     --mlp_hidden_dim 10 \
-    --maxplus
+    --maxplus \
     --learning_rate 1e-3 \
     --dropout 0.1 \
-    --scheduler
+    --scheduler \
     --model_save_dir "${model_dir}/output_p5-50_4-50_3-50_2-50_d10_l1e-3_t0.2_r_b_6B.100d_slScale0_epsScale0_3d79c4f"
 ```
 
