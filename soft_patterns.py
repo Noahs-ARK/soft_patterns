@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 -u
 """
 A text classification model that feeds the document scores from a bunch of
 soft patterns into an MLP.
 """
 
 import sys
-import argparse
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
 from time import monotonic
 
@@ -23,7 +23,7 @@ from tensorboardX import SummaryWriter
 
 from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP
-from util import chunked, identity
+from util import chunked_sorted, identity
 
 
 def to_cuda(gpu):
@@ -52,12 +52,14 @@ class Semiring:
                  one,
                  plus,
                  times,
-                 from_float):
+                 from_float,
+                 to_float):
         self.zero = zero
         self.one = one
         self.plus = plus
         self.times = times
         self.from_float = from_float
+        self.to_float = to_float
 
 
 def neg_infinity(*sizes):
@@ -65,24 +67,33 @@ def neg_infinity(*sizes):
 
 
 # element-wise plus, times
-ProbSemiring = Semiring(zeros, ones, torch.add, torch.mul, sigmoid)
+ProbSemiring = Semiring(zeros, ones, torch.add, torch.mul, sigmoid, identity)
 
 # element-wise max, plus
-MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity)
+MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity, identity)
+# element-wise max, times. in log-space
+LogSpaceMaxTimesSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, lambda x: torch.log(torch.sigmoid(x)), torch.exp)
 
 
 class Batch:
-    def __init__(self, docs, embeddings, cuda):
+    def __init__(self, docs, embeddings, cuda, dropout=0):
         """ Makes a smaller vocab of only words used in the given docs """
         mini_vocab = Vocab.from_docs(docs, default=0)
         max_len = max(len(doc) for doc in docs)
         self.max_doc_len = max_len
+        if dropout:
+            docs = [
+                [0 if np.random.rand() < dropout else x for x in doc]
+            for doc in docs
+        ]
+
         self.docs = [
             cuda(fixed_var(torch.LongTensor(mini_vocab.numberize(doc) + [0] * (max_len - len(doc)))))
             for doc in docs
         ]
         self.doc_lens = cuda(torch.LongTensor([len(doc) for doc in docs]))
         local_embeddings = [embeddings[i] for i in mini_vocab.names]
+
         self.embeddings_matrix = cuda(fixed_var(FloatTensor(local_embeddings).t()))
 
     def size(self):
@@ -105,8 +116,7 @@ class SoftPatternClassifier(Module):
                  semiring,
                  epsilon_scale_value,
                  self_loop_scale_value,
-                 gpu=False,
-                 legacy=False):
+                 gpu=False):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
         self.vocab = vocab
@@ -116,7 +126,7 @@ class SoftPatternClassifier(Module):
 
         self.total_num_patterns = sum(pattern_specs.values())
 
-        self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes, legacy)
+        self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes)
 
         self.word_dim = len(embeddings[0])
         self.num_diags = 2  # self-loops and single-forward-steps
@@ -151,7 +161,7 @@ class SoftPatternClassifier(Module):
         transition_scores = \
             self.semiring.from_float(mm(self.diags, batch.embeddings_matrix) + self.bias).t()
 
-        if dropout:
+        if dropout is not None and dropout:
             transition_scores = dropout(transition_scores)
 
         batched_transition_scores = [
@@ -218,8 +228,7 @@ class SoftPatternClassifier(Module):
             time3 = monotonic()
             print("MM: {}, other: {}".format(round(time2 - time1, 3), round(time3 - time2, 3)))
 
-        if dropout is not None and dropout:
-            scores = dropout(scores)
+        scores = self.semiring.to_float(scores)
 
         if debug % 4 == 3:
             return self.mlp.forward(scores), transition_matrices, all_hiddens
@@ -250,7 +259,6 @@ class SoftPatternClassifier(Module):
                          eps_value  # doesn't depend on token, just state
                      )), 2)
             )
-
 
         result = \
             cat((restart_padding,  # <- Adding the start state
@@ -315,15 +323,15 @@ def evaluate_accuracy(model, data, batch_size, gpu, debug=0):
     n = float(len(data))
     correct = 0
     num_1s = 0
-    for batch in chunked(data, batch_size):
+    for batch in chunked_sorted(data, batch_size):
         batch_obj = Batch([x for x, y in batch], model.embeddings, to_cuda(gpu))
         gold = [y for x, y in batch]
         predicted = model.predict(batch_obj, debug)
-        num_1s += sum(predicted)
+        num_1s += predicted.count(1)
         correct += sum(1 for pred, gold in zip(predicted, gold) if pred == gold)
 
     print("num predicted 1s:", num_1s)
-    print("num gold 1s:     ", sum(gold for _, gold in data))
+    print("num gold 1s:     ", sum(gold == 1 for _, gold in data))
 
     return correct / n
 
@@ -342,6 +350,7 @@ def train(train_data,
           clip=None,
           debug=0,
           dropout=0,
+          word_dropout=0,
           patience=1000):
     """ Train a model on all the given docs """
     optimizer = Adam(model.parameters(), lr=learning_rate)
@@ -371,8 +380,8 @@ def train(train_data,
 
         loss = 0.0
         i = 0
-        for batch in chunked(train_data, batch_size):
-            batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
+        for batch in chunked_sorted(train_data, batch_size):
+            batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu), word_dropout)
             gold = [x[1] for x in batch]
             loss += torch.sum(
                 train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip, debug, dropout)
@@ -398,7 +407,7 @@ def train(train_data,
 
         dev_loss = 0.0
         i = 0
-        for batch in chunked(dev_data, batch_size):
+        for batch in chunked_sorted(dev_data, batch_size):
             batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
             gold = [x[1] for x in batch]
             dev_loss += torch.sum(compute_loss(model, batch_obj, num_classes, gold, loss_function, gpu, debug).data)
@@ -497,7 +506,10 @@ def main(args):
         train_data = train_data[:n]
         dev_data = dev_data[:n]
 
-    semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
+    semiring = \
+        MaxPlusSemiring if args.maxplus else (
+            LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
+        )
 
     epsilon_scale_value = args.epsilon_scale_value if args.epsilon_scale_value is not None else semiring.one([1])
     self_loop_scale_value = args.self_loop_scale_value if args.self_loop_scale_value is not None else semiring.one([1])
@@ -511,8 +523,7 @@ def main(args):
                                   semiring,
                                   epsilon_scale_value,
                                   self_loop_scale_value,
-                                  args.gpu,
-                                  args.legacy)
+                                  args.gpu)
 
     if args.gpu:
         model.to_cuda()
@@ -545,42 +556,56 @@ def main(args):
           args.clip,
           args.debug,
           args.dropout,
+          args.word_dropout,
           args.patience)
 
     return 0
 
 
+def soft_pattern_arg_parser():
+    p = ArgumentParser(add_help=False)
+    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
+    p.add_argument("-p", "--patterns",
+                   help="Pattern lengths and numbers: a comma separated list of length:number pairs",
+                   default="5:50,4:50,3:50,2:50")
+    p.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
+    p.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
+    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
+    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
+    p.add_argument("--epsilon_scale_value", help="Value for epsilon scale (default is Semiring.one)", type=float)
+    p.add_argument("--self_loop_scale_value", help="Value for self loop scale (default is Semiring.one)", type=float)
+    p.add_argument("--maxplus",
+                   help="Use max-plus semiring instead of plus-times",
+                   default=False, action='store_true')
+    p.add_argument("--maxtimes",
+                   help="Use max-times semiring instead of plus-times",
+                   default=False, action='store_true')
+    return p
+
+
+def training_arg_parser():
+    p = ArgumentParser(add_help=False)
+    p.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
+    p.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
+    p.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
+    p.add_argument("--patience", help="Patience parameter (for early stopping)", type=int, default=30)
+    p.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
+    p.add_argument("-m", "--model_save_dir", help="where to save the trained model")
+    p.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
+    p.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
+    p.add_argument("--input_model", help="Input model (to run test and not train)")
+    p.add_argument("--td", help="Train data file", required=True)
+    p.add_argument("--tl", help="Train labels file", required=True)
+    p.add_argument("--vd", help="Validation data file", required=True)
+    p.add_argument("--vl", help="Validation labels file", required=True)
+    p.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
+    p.add_argument("--clip", help="Gradient clipping", type=float, default=None)
+    p.add_argument("--debug", help="Debug", type=int, default=0)
+    return p
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    parser.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    parser.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
-    parser.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
-    parser.add_argument("-p", "--patterns",
-                        help="Pattern lengths and numbers: a comma separated list of length:number pairs",
-                        default="5:50,4:50,3:50,2:50")
-    parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
-    parser.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
-    parser.add_argument("--patience", help="Patience parameter (for early stopping)", type=int, default=30)
-    parser.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
-    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
-    parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
-    parser.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
-    parser.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
-    parser.add_argument("-c", "--legacy", help="Load legacy models", action='store_true')
-    parser.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    parser.add_argument("--input_model", help="Input model (to run test and not train)")
-    parser.add_argument("--td", help="Train data file", required=True)
-    parser.add_argument("--tl", help="Train labels file", required=True)
-    parser.add_argument("--vd", help="Validation data file", required=True)
-    parser.add_argument("--vl", help="Validation labels file", required=True)
-    parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
-    parser.add_argument("--clip", help="Gradient clipping", type=float, default=None)
-    parser.add_argument("--epsilon_scale_value", help="Value for epsilon scale (default is Semiring.one)", type=float)
-    parser.add_argument("--self_loop_scale_value", help="Value for self loop scale (default is Semiring.one)", type=float)
-    parser.add_argument("--debug", help="Debug", type=int, default=0)
-    parser.add_argument("--maxplus",
-                        help="Use max-plus semiring instead of plus-times",
-                        default=False, action='store_true')
-
+    parser = ArgumentParser(description=__doc__,
+                            formatter_class=ArgumentDefaultsHelpFormatter,
+                            parents=[soft_pattern_arg_parser(), training_arg_parser()])
     sys.exit(main(parser.parse_args()))

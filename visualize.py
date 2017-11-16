@@ -9,7 +9,8 @@ import sys
 import torch
 from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
-from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring
+from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
+    LogSpaceMaxTimesSemiring, soft_pattern_arg_parser
 from util import chunked
 
 SCORE_IDX = 0
@@ -182,7 +183,10 @@ def main(args):
     num_classes = len(set(dev_labels))
     print("num_classes:", num_classes)
 
-    semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
+    semiring = \
+        MaxPlusSemiring if args.maxplus else (
+            LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
+        )
 
     model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
@@ -207,22 +211,13 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    parser.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    parser.add_argument("-p", "--patterns",
-                        help="Pattern lengths and numbers: a comma separated list of length:number pairs",
-                        default="5:50,4:50,3:50,2:50")
-    parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
-    parser.add_argument("-b", "--batch_size", help="Batch size", type=int, default=100)
-    parser.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
-    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
-    parser.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                     parents=[soft_pattern_arg_parser()])
     parser.add_argument("--input_model", help="Input model (to run test and not train)", required=True)
     parser.add_argument("--vd", help="Validation data file", required=True)
     parser.add_argument("--vl", help="Validation labels file", required=True)
-    parser.add_argument("--maxplus",
-                        help="Use max-plus semiring instead of plus-times",
-                        default=False, action='store_true')
+    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
+    parser.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
 
     sys.exit(main(parser.parse_args()))

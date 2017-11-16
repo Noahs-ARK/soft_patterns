@@ -3,19 +3,17 @@
 Script to visualize the patterns in a SoftPatterns model based on their
 highest-scoring spans in the dev set.
 """
-import argparse
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
 import sys
 import torch
-from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
-from soft_patterns import MaxPlusSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring
-from util import chunked
+from soft_patterns import MaxPlusSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring, training_arg_parser, \
+    soft_pattern_arg_parser
 
 SCORE_IDX = 0
 START_IDX_IDX = 1
 END_IDX_IDX = 2
-
 
 
 # TODO: refactor duplicate code with soft_patterns.py
@@ -57,8 +55,7 @@ def main(args):
                                   semiring,
                                   epsilon_scale_value,
                                   self_loop_scale_value,
-                                  args.gpu,
-                                  False)
+                                  args.gpu)
 
     if args.gpu:
         model.to_cuda()
@@ -75,24 +72,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    parser.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    parser.add_argument("-p", "--patterns",
-                        help="Pattern lengths and numbers: a comma separated list of length:number pairs",
-                        default="5:50,4:50,3:50,2:50")
-    parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
-    parser.add_argument("-b", "--batch_size", help="Batch size", type=int, default=100)
-    parser.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
-    parser.add_argument("-n", "--num_test_instances", help="Number of test instances", type=int, default=None)
-    parser.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
-    parser.add_argument("--input_model", help="Input model (to run test and not train)", required=True)
-    parser.add_argument("--vd", help="Validation data file", required=True)
-    parser.add_argument("--vl", help="Validation labels file", required=True)
-    parser.add_argument("--maxplus",
-                        help="Use max-plus semiring instead of plus-times",
-                        default=False, action='store_true')
-    parser.add_argument("--epsilon_scale_value", help="Value for epsilon scale (default is Semiring.one)", type=float)
-    parser.add_argument("--self_loop_scale_value", help="Value for self loop scale (default is Semiring.one)", type=float)
-
+    parser = ArgumentParser(description=__doc__,
+                            formatter_class=ArgumentDefaultsHelpFormatter,
+                            parents=[soft_pattern_arg_parser(), training_arg_parser()])
     sys.exit(main(parser.parse_args()))

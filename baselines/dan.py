@@ -1,13 +1,25 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 -u
 """
-Text classification baseline models.
+Text classification baseline model "DAN".
+
+example usage:
+./baselines/dan.py \
+        -e ${wordvec_file} \
+        --td ${sst_dir}/train.data \
+        --tl ${sst_dir}/train.labels \
+        --vd ${sst_dir}/dev.data \
+        --vl ${sst_dir}/dev.labels \
+        -l 0.001 \
+        -i 70 \
+        -m ./experiments/dan \
+        -n 100
 """
 import argparse
-from soft_patterns import fixed_var, train, to_cuda
+import sys; sys.path.append(".")
+from soft_patterns import train, to_cuda, training_arg_parser, argmax
 import numpy as np
 import os
 import torch
-from torch import FloatTensor
 from torch.functional import stack
 from torch.nn import Module, Dropout2d
 
@@ -30,33 +42,33 @@ class DanClassifier(Module):
                  dropout=0.1):
         super(DanClassifier, self).__init__()
         self.to_cuda = to_cuda(gpu)
-        self.embeddings = self.to_cuda(fixed_var(FloatTensor(embeddings)))
+        self.embeddings = embeddings
         self.word_dim = len(embeddings[0])
         self.mlp = MLP(self.word_dim,
                        mlp_hidden_dim,
                        num_mlp_layers,
-                       num_classes,
-                       legacy=False)
+                       num_classes)
         self.dropout = Dropout2d(dropout) if dropout else None
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
-    def forward(self, doc):
+    def forward(self, batch, debug=0, dropout=None):
         """ Average all word vectors in the doc, and feed into an MLP """
-        n = len(doc)
-        doc_vectors = stack([self.embeddings[i] for i in doc])
-        if self.dropout:
-            # dropout entire words at a time
-            doc_vectors = self.dropout(doc_vectors.view(n, 1, self.word_dim)).view(n, self.word_dim)
-        avg_word_vector = torch.sum(doc_vectors, dim=0) / n
-        return self.mlp.forward(avg_word_vector)
+        for doc in batch.docs:
+            n = len(doc)
+            doc_vectors = torch.index_select(batch.embeddings_matrix, 1, doc)
+            if dropout:
+                # dropout entire words at a time
+                doc_vectors = self.dropout(doc_vectors.view(self.word_dim, 1, n)).view(self.word_dim, n)
+            avg_word_vector = torch.sum(doc_vectors, dim=1) / n
+            return self.mlp.forward(avg_word_vector)
 
-    def predict(self, doc):
+    def predict(self, batch, debug=0):
         old_training = self.training
         self.train(False)
-        output = self.forward(doc).data
+        output = self.forward(batch, debug=debug).data
         _, am = torch.max(output, 0)
         self.train(old_training)
-        return int(am[0])
+        return [int(x) for x in am]
 
 
 # TODO: refactor duplicate code with soft_patterns.py
@@ -72,26 +84,19 @@ def main(args):
 
     dev_vocab = vocab_from_text(args.vd)
     print("Dev vocab:", len(dev_vocab))
-    if args.td is not None:
-        train_vocab = vocab_from_text(args.td)
-        print("Train vocab:", len(train_vocab))
-        dev_vocab |= train_vocab
+    train_vocab = vocab_from_text(args.td)
+    print("Train vocab:", len(train_vocab))
+    dev_vocab |= train_vocab
 
     vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
-    dev_input, dev_text = read_docs(args.vd, vocab)
+    dev_input, dev_text = read_docs(args.vd, vocab, 1)
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
 
-    if args.td is None or args.tl is None:
-        print("Both training data (--td) and training labels (--tl) required in training mode")
-        return -1
-
     np.random.shuffle(dev_data)
-    num_iterations = args.num_iterations
-
-    train_input, _ = read_docs(args.td, vocab)
+    train_input, _ = read_docs(args.td, vocab, 1)
     train_labels = read_labels(args.tl)
 
     print("training instances:", len(train_input))
@@ -114,8 +119,8 @@ def main(args):
                           num_mlp_layers,
                           num_classes,
                           embeddings,
-                          args.gpu,
-                          dropout)
+                          gpu=args.gpu,
+                          dropout=dropout)
 
     model_file_prefix = 'model'
     # Loading model
@@ -136,31 +141,31 @@ def main(args):
           model,
           num_classes,
           model_save_dir,
-          num_iterations,
+          args.num_iterations,
           model_file_prefix,
           args.learning_rate,
+          args.batch_size,
           args.scheduler,
-          args.gpu)
+          gpu=args.gpu,
+          clip=args.clip,
+          debug=args.debug,
+          dropout=args.dropout,
+          patience=args.patience)
+
+
+def dan_arg_parser():
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
+    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
+    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
+    p.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
+    p.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
+    return p
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    parser.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    parser.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
-    parser.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
-    parser.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
-    parser.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
-    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
-    parser.add_argument("-m", "--model_save_dir", help="where to save the trained model")
-    parser.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
-    parser.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
-    parser.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    parser.add_argument("--input_model", help="Input model (to run test and not train)")
-    parser.add_argument("--td", help="Train data file")
-    parser.add_argument("--tl", help="Train labels file")
-    parser.add_argument("--vd", help="Validation data file", required=True)
-    parser.add_argument("--vl", help="Validation labels file", required=True)
-    parser.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
-
+    parser = \
+        argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                parents=[dan_arg_parser(), training_arg_parser()])
     main(parser.parse_args())
