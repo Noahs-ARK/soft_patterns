@@ -36,17 +36,19 @@ def main(args):
     dev_labels = read_labels(args.work_dir+"/dev.labels")
 
     for doc in train_docs:
-        add_patterns(doc, words, patterns, args.max_pattern_len)
+        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens)
 
     thr = args.min_pattern_frequency*len(train_docs)
 
     print("Read", len(patterns), "patterns")
     patterns = {k: patterns[k] for k in patterns.keys() if patterns[k] >= thr}
 
+    s = 0
     for p in patterns.keys():
         p.set_freq(patterns[p])
+        s += patterns[p]
 
-    print("Read", len(patterns), "patterns")
+    print("Read", len(patterns), "patterns", s)
 
     trie = build_trie(patterns)
 
@@ -60,10 +62,10 @@ def main(args):
     dev_features = lil_matrix((len(dev_docs), len(patterns)))
 
     for (i, doc) in enumerate(train_docs):
-        add_patterns(doc, words, patterns, args.max_pattern_len, trie, train_features, i)
+        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, trie, train_features, i)
 
     for (i, doc) in enumerate(dev_docs):
-        add_patterns(doc, words, patterns, args.max_pattern_len, trie, dev_features, i)
+        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, trie, dev_features, i)
 
     # print([x.__str__() for x in patterns.keys()])
     # print("df",dev_features)
@@ -123,91 +125,104 @@ def build_trie(patterns):
 
     return trie
 
-def add_patterns(doc, words, patterns, max_size, trie=None, features=None, index=None):
+
+class StackElement():
+    def __init__(self, pattern):
+        self.pattern = pattern
+
+    def new_element(self, pattern, other=None):
+        raise NotImplementedError
+
+    def finish(self, k1, k2, k3):
+        raise NotImplementedError
+
+class PlainStackElement(StackElement):
+    def __init__(self, pattern, patterns):
+        super(PlainStackElement, self).__init__(pattern)
+        self.patterns = patterns
+
+    def new_element(self, pattern, w=None):
+        return PlainStackElement(pattern, self.patterns)
+
+    def finish(self, k2, k3):
+        # Updating new pattern count
+        if self.pattern in self.patterns:
+            self.patterns[self.pattern] += 1
+        else:
+            self.patterns[self.pattern] = 1
+
+
+class TrieStackElement(StackElement):
+    def __init__(self, pattern, trie, features):
+        super(TrieStackElement, self).__init__(pattern)
+        self.trie = trie
+        self.features = features
+
+    def new_element(self, pattern, w=None):
+        trie = self.get_trie(w)
+
+        if trie is not None:
+            return TrieStackElement(pattern, trie, self.features)
+
+    def get_trie(self, w):
+        if w is None:
+            return self.trie
+        elif w in self.trie:
+            return self.trie[w]
+        else:
+            return None
+
+    def finish(self, w, index):
+        trie = self.get_trie(w)
+
+        if trie is not None and INDEX_TOKEN in trie:
+            self.features[index, trie[INDEX_TOKEN]] = 1  # / patterns[p2obj]
+
+
+def add_patterns(doc, words, patterns, max_size, use_CW_tokens, trie=None, features=None, index=None):
     # print("Trie is",trie.keys() if trie is not None else None)
     patterns_stack = []
 
-    local_trie = None
+    stackElement = PlainStackElement(None, patterns) if trie is None else TrieStackElement(None, trie, features)
 
     for w in doc:
-        if w not in words:
-            # print("not found")
-            continue
+        if w in words and words[w].senses[0] == 0:
+            wobj = words[w]
 
-        # if trie is not None:
-        #     print(w)
-
-        wobj = words[w]
-
-        # HFW
-        if wobj.senses[0] == 0:
             # Pattern object of w
             pobj = Pattern(w)
 
             new_stack = []
 
             # Traversing all patterns in our stack.
-            for e in patterns_stack:
+            for element in patterns_stack:
                 # Pattern type mode: just one element, the pattern object.
-                if trie is None:
-                    p2 = e
-                # Document scoring more: two elements, pattern object and local trie
-                else:
-                    p2 = e[0]
-                    local_trie = e[1]
 
                 # new pattern object: pattern object + w
-                p2obj = p2.add_hfw(w)
+                p2obj = element.pattern.add_hfw(w)
 
                 # if pattern has not reached maximum length, adding pattern to stack for the next word(s).
-                if p2obj.size() < max_size:
-                    if trie is None:
-                        new_stack.append(p2obj)
-                    elif w in local_trie:
-                        new_stack.append([p2obj, local_trie[w]])
+                new_element = element.new_element(p2obj, w)
 
-                if trie is None:
-                    # Updating new pattern count
-                    if p2obj in patterns:
-                        patterns[p2obj] += 1
-                    else:
-                        patterns[p2obj] = 1
+                if new_element is not None:
+                    if p2obj.size() < max_size:
+                        new_stack.append(new_element)
 
-                    # If w can also be a CW, adding original pattern object again.
-                    if len(wobj.senses) == 2:
-                        new_stack.append(pobj)
-                else:
-                    if w in local_trie:
-                        if INDEX_TOKEN in local_trie[w]:
-                            features[index, local_trie[w][INDEX_TOKEN]] = 1# / patterns[p2obj]
-                            # if p2obj in patterns:
-                            #     print("Adding", 1/patterns[p2obj],"to", index, local_trie[w][INDEX_TOKEN], p2obj)
-                            #     features[index, local_trie[w][INDEX_TOKEN]] = 1/patterns[p2obj]
-                            # else:
-                            #     print(p2obj.__str__(), "not found:(")
+                    new_element.finish(w, index)
 
-                        # If w can also be a CW, adding original pattern object again.
-                        if len(wobj.senses) == 2:
-                            new_stack.append([pobj, local_trie])
+                # If w can also be a CW, adding original pattern object again.
+                if len(wobj.senses) == 2:
+                    new_stack.append(element)
 
             patterns_stack = new_stack
 
             # w alone can also be a pattern
-            if trie is None:
-                patterns_stack.append(pobj)
-                if pobj in patterns:
-                    patterns[pobj] += 1
-                else:
-                    patterns[pobj] = 1
-            elif w in trie:
-                patterns_stack.append([pobj, trie[w]])
-                if INDEX_TOKEN in trie[w]:
-                    features[index, trie[w][INDEX_TOKEN]] = 1
-                    # if pobj in patterns:
-                    #     print("Adding", 1 / patterns[pobj], "to", index)
-                    #     features[index, trie[w][INDEX_TOKEN]] = 1/patterns[pobj]
-                    # else:
-                    #     print(pobj.__str__(),"not found:(")
+            new_element = stackElement.new_element(pobj, w)
+
+            if new_element is not None:
+                patterns_stack.append(new_element)
+
+                new_element.finish(None, index)
 
 
 
@@ -287,6 +302,7 @@ if __name__ == '__main__':
     parser.add_argument("--fh", help="High frequency word minimal threshold", type=float, default=0.0001)
     parser.add_argument("--fc", help="Content word maximal threshold", type=float, default=0.001)
     parser.add_argument("-m", "--min_pattern_frequency", help="Minimal pattern frequency", type=float, default=0.005)
+    parser.add_argument("-c", "--use_CW_tokens", help="Use CW tokens in pattern", action='store_true')
     parser.add_argument("-x", "--max_pattern_len", help="Maximum number of HFWs in pattern", type=int, default=6)
 
     main(parser.parse_args())
