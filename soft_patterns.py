@@ -76,11 +76,23 @@ LogSpaceMaxTimesSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, l
 
 
 class Batch:
-    def __init__(self, docs, embeddings, cuda, dropout=0):
+    def __init__(self, docs, embeddings, cuda, dropout=0, max_len=-1):
         """ Makes a smaller vocab of only words used in the given docs """
         mini_vocab = Vocab.from_docs(docs, default=0)
-        max_len = max(len(doc) for doc in docs)
-        self.max_doc_len = max_len
+        max_doc_len = max(len(doc) for doc in docs)
+
+        # Limit maximum document length (for efficiency reasons).
+        if max_len != -1 and max_doc_len > max_len:
+            max_doc_len = max_len
+
+            # For longer documents, we randomly select a sequence of words of length max_len.
+            starts = [np.random.randint(0, len(doc)-max_len) if len(doc) > max_len else 0 for doc in docs]
+            docs = [
+                doc[starts[i]:starts[i]+max_len]
+                for i, doc in enumerate(docs)
+            ]
+
+        self.max_doc_len = max_doc_len
         if dropout:
             docs = [
                 [0 if np.random.rand() < dropout else x for x in doc]
@@ -88,7 +100,7 @@ class Batch:
         ]
 
         self.docs = [
-            cuda(fixed_var(torch.LongTensor(mini_vocab.numberize(doc) + [0] * (max_len - len(doc)))))
+            cuda(fixed_var(torch.LongTensor(mini_vocab.numberize(doc) + [0] * (max_doc_len - len(doc)))))
             for doc in docs
         ]
         self.doc_lens = cuda(torch.LongTensor([len(doc) for doc in docs]))
@@ -348,11 +360,13 @@ def train(train_data,
           run_scheduler=False,
           gpu=False,
           clip=None,
+          max_len=-1,
           debug=0,
           dropout=0,
           word_dropout=0,
           patience=1000):
     """ Train a model on all the given docs """
+
     optimizer = Adam(model.parameters(), lr=learning_rate)
     loss_function = NLLLoss(None, False)
 
@@ -381,7 +395,7 @@ def train(train_data,
         loss = 0.0
         i = 0
         for batch in chunked_sorted(train_data, batch_size):
-            batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu), word_dropout)
+            batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu), word_dropout, max_len)
             gold = [x[1] for x in batch]
             loss += torch.sum(
                 train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip, debug, dropout)
@@ -542,6 +556,7 @@ def main(args):
             os.makedirs(model_save_dir)
 
     print("Training with", model_file_prefix)
+
     train(train_data,
           dev_data,
           model,
@@ -554,6 +569,7 @@ def main(args):
           args.scheduler,
           args.gpu,
           args.clip,
+          args.max_doc_len,
           args.debug,
           args.dropout,
           args.word_dropout,
@@ -596,6 +612,9 @@ def training_arg_parser():
     p.add_argument("--input_model", help="Input model (to run test and not train)")
     p.add_argument("--td", help="Train data file", required=True)
     p.add_argument("--tl", help="Train labels file", required=True)
+    p.add_argument("--max_doc_len", \
+                   help="Maximum doc length. For longer documents, spans of length max_doc_len will be randomly selected each iteration (-1 means no restriction)",
+                   type=int, default=-1)
     p.add_argument("--vd", help="Validation data file", required=True)
     p.add_argument("--vl", help="Validation labels file", required=True)
     p.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
