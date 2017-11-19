@@ -126,8 +126,6 @@ class SoftPatternClassifier(Module):
                  embeddings,
                  vocab,
                  semiring,
-                 epsilon_scale_value,
-                 self_loop_scale_value,
                  gpu=False):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
@@ -164,8 +162,8 @@ class SoftPatternClassifier(Module):
         self.epsilon = self.to_cuda(Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1)))
 
         # TODO: learned? hyperparameter?
-        self.epsilon_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.times(semiring.one(1), epsilon_scale_value))))
-        self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.times(semiring.one(1), self_loop_scale_value))))
+        self.epsilon_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
+        self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
 
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
@@ -525,8 +523,6 @@ def main(args):
             LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
         )
 
-    epsilon_scale_value = args.epsilon_scale_value if args.epsilon_scale_value is not None else semiring.one([1])
-    self_loop_scale_value = args.self_loop_scale_value if args.self_loop_scale_value is not None else semiring.one([1])
 
     model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
@@ -535,8 +531,6 @@ def main(args):
                                   embeddings,
                                   vocab,
                                   semiring,
-                                  epsilon_scale_value,
-                                  self_loop_scale_value,
                                   args.gpu)
 
     if args.gpu:
@@ -588,8 +582,6 @@ def soft_pattern_arg_parser():
     p.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
     p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
     p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    p.add_argument("--epsilon_scale_value", help="Value for epsilon scale (default is Semiring.one)", type=float)
-    p.add_argument("--self_loop_scale_value", help="Value for self loop scale (default is Semiring.one)", type=float)
     p.add_argument("--maxplus",
                    help="Use max-plus semiring instead of plus-times",
                    default=False, action='store_true')
