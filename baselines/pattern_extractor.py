@@ -12,8 +12,10 @@ from scipy.sparse import lil_matrix
 
 INDEX_TOKEN = "###INDEX###"
 
+CW_TOKEN = "CW"
+
 def main(args):
-    with open(args.work_dir+"/train.data", encoding="utf-8") as ifh:
+    with open(args.work_dir+"/train.data", encoding="ISO-8859-1") as ifh:
         wordcount = Counter(ifh.read().split())
 
     sum = np.sum(list(wordcount.values()))
@@ -36,7 +38,8 @@ def main(args):
     dev_labels = read_labels(args.work_dir+"/dev.labels")
 
     for doc in train_docs:
-        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens)
+        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, args.min_pattern_length)
+        # sys.exit(-1)
 
     thr = args.min_pattern_frequency*len(train_docs)
 
@@ -48,9 +51,11 @@ def main(args):
         p.set_freq(patterns[p])
         s += patterns[p]
 
+    pattern_keys = list(patterns.keys())
+
     print("Read", len(patterns), "patterns", s)
 
-    trie = build_trie(patterns)
+    trie = build_trie(pattern_keys)
 
     # print(trie)
 
@@ -62,15 +67,18 @@ def main(args):
     dev_features = lil_matrix((len(dev_docs), len(patterns)))
 
     for (i, doc) in enumerate(train_docs):
-        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, trie, train_features, i)
+        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, args.min_pattern_length, trie, train_features, i)
 
     for (i, doc) in enumerate(dev_docs):
-        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, trie, dev_features, i)
+        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, args.min_pattern_length, trie, dev_features, i)
 
     # print([x.__str__() for x in patterns.keys()])
     # print("df",dev_features)
+    # print("tf", train_features)
 
-    train(train_features, train_labels, dev_features, dev_labels)
+    clf = train(train_features, train_labels, dev_features, dev_labels)
+
+    gen_salient_patterns(train_features, clf, pattern_keys, args.n_salient_features)
 
 
     return 0
@@ -79,7 +87,7 @@ def train(train_features, train_labels, dev_features, dev_labels):
     max_r = -1
     argmax = None
 
-    Cs = [1,0.5,0.1,0.05,0.01]
+    Cs = [1,0.5,0.1,0.05,0.01, 0.005, 0.001]
 
     for C in Cs:
         print("Testing", C)
@@ -102,6 +110,8 @@ def train(train_features, train_labels, dev_features, dev_labels):
 
     clf = linear_model.LogisticRegression(C=argmax)
 
+    clf.fit(train_features, train_labels)
+
     return clf
 
 
@@ -110,16 +120,64 @@ def evaluate(predicted, gold):
     return 1.*sum(predicted==gold)/len(predicted)
 
 
+def gen_salient_patterns(train_features, clf, pattern_keys, n=5):
+    weights = clf.coef_[0]
+
+    sorted_w = np.argsort(weights)
+
+    top_n = sorted_w[:n]
+    last_n = list(reversed(sorted_w[-n:]))
+
+    print(["{}, '{}': {:,.3f}".format(i, pattern_keys[i].__str__(), weights[i]) for i in top_n])
+    print(["{},'{}': {:,.3f}".format(i, pattern_keys[i].__str__(), weights[i]) for i in last_n])
+    # print(last_n, [(pattern_keys[i].__str__(), round(weights[i], 3)) for i in last_n])
+
+    # print("Getting top")
+    # top_n_freq = get_freq(features, top_n)
+    # last_n_freq = get_freq(features, last_n)
+    # print("done Getting top")
+
+    # with open(sys.argv[2], 'r') as ifh:
+    #     ifh.readline()
+    #     lines = ifh.readlines()
+    #
+    #     nl = len(lines)
+    #
+    #     if (n > nl):
+    #         n = nl
+    #
+    #     print
+    #     "Positive"
+    #     for w in top_n:
+    #         if (w >= len(lines)):
+    #             print
+    #             "length\t" + str(w) + "\t-\t-\t" + str(round(weights[w], 3))
+    #         else:
+    #             print
+    #             lines[w].rstrip() + "\t" + str(top_n_freq[w]) + "\t" + str(round(weights[w], 3))
+    #
+    #     print
+    #     "\nNegative"
+    #     for w in last_n:
+    #         if (w >= len(lines)):
+    #             print
+    #             "length\t" + str(w) + "\t-" + str(round(weights[w], 3))
+    #         else:
+    #             print
+    #             lines[w].rstrip() + "\t" + str(last_n_freq[w]) + "\t" + str(round(weights[w], 3))
+
+
 def build_trie(patterns):
     trie = dict()
 
     for (i, p) in enumerate(patterns):
+        # print("patt",p,i)
         local_trie = trie
-        for hfw in p.hfws:
-            if hfw not in local_trie:
-                local_trie[hfw] = dict()
+        for element in p.elements:
+            if element not in local_trie:
+                local_trie[element] = dict()
 
-            local_trie = local_trie[hfw]
+            local_trie = local_trie[element]
 
         local_trie[INDEX_TOKEN] = i
 
@@ -127,24 +185,29 @@ def build_trie(patterns):
 
 
 class StackElement():
-    def __init__(self, pattern):
+    def __init__(self, pattern, min_pattern_length):
         self.pattern = pattern
+        self.min_pattern_length = min_pattern_length
 
     def new_element(self, pattern, other=None):
         raise NotImplementedError
 
-    def finish(self, k1, k2, k3):
-        raise NotImplementedError
+    def finish(self, k1):
+        return self.min_pattern_length <= self.pattern.n_hfws()
+
 
 class PlainStackElement(StackElement):
-    def __init__(self, pattern, patterns):
-        super(PlainStackElement, self).__init__(pattern)
+    def __init__(self, pattern, min_pattern_length, patterns):
+        super(PlainStackElement, self).__init__(pattern, min_pattern_length)
         self.patterns = patterns
 
     def new_element(self, pattern, w=None):
-        return PlainStackElement(pattern, self.patterns)
+        return PlainStackElement(pattern, self.min_pattern_length, self.patterns)
 
-    def finish(self, k2, k3):
+    def finish(self, k1):
+        if not super(PlainStackElement, self).finish(k1):
+            return False
+
         # Updating new pattern count
         if self.pattern in self.patterns:
             self.patterns[self.pattern] += 1
@@ -153,16 +216,15 @@ class PlainStackElement(StackElement):
 
 
 class TrieStackElement(StackElement):
-    def __init__(self, pattern, trie, features):
-        super(TrieStackElement, self).__init__(pattern)
+    def __init__(self, pattern, min_pattern_length, trie, features):
+        super(TrieStackElement, self).__init__(pattern, min_pattern_length)
         self.trie = trie
         self.features = features
 
     def new_element(self, pattern, w=None):
         trie = self.get_trie(w)
 
-        if trie is not None:
-            return TrieStackElement(pattern, trie, self.features)
+        return TrieStackElement(pattern, self.min_pattern_length, trie, self.features) if trie is not None else None
 
     def get_trie(self, w):
         if w is None:
@@ -172,71 +234,121 @@ class TrieStackElement(StackElement):
         else:
             return None
 
-    def finish(self, w, index):
-        trie = self.get_trie(w)
+    def finish(self, index):
+        if not super(TrieStackElement, self).finish(index):
+            return False
 
-        if trie is not None and INDEX_TOKEN in trie:
-            self.features[index, trie[INDEX_TOKEN]] = 1  # / patterns[p2obj]
+        if INDEX_TOKEN in self.trie:
+            self.features[index, self.trie[INDEX_TOKEN]] = 1  # / patterns[p2obj]
 
 
-def add_patterns(doc, words, patterns, max_size, use_CW_tokens, trie=None, features=None, index=None):
+def add_patterns(doc, words, patterns, max_size, use_CW_tokens, min_pattern_length, trie=None, features=None, index=None):
     # print("Trie is",trie.keys() if trie is not None else None)
     patterns_stack = []
 
-    stackElement = PlainStackElement(None, patterns) if trie is None else TrieStackElement(None, trie, features)
+    stackElement = PlainStackElement(None, min_pattern_length, patterns) if trie is None \
+        else TrieStackElement(None, min_pattern_length, trie, features)
 
+    # if trie is not None:
+    #     print("new doc")
     for w in doc:
+        new_stack = []
+
+        # if trie is not None:
+            # print(w)
         if w in words and words[w].senses[0] == 0:
             wobj = words[w]
-
-            # Pattern object of w
-            pobj = Pattern(w)
-
-            new_stack = []
 
             # Traversing all patterns in our stack.
             for element in patterns_stack:
                 # Pattern type mode: just one element, the pattern object.
 
+                # if trie is not None:
+                #     print(element.trie)
+
                 # new pattern object: pattern object + w
                 p2obj = element.pattern.add_hfw(w)
 
-                # if pattern has not reached maximum length, adding pattern to stack for the next word(s).
                 new_element = element.new_element(p2obj, w)
 
                 if new_element is not None:
-                    if p2obj.size() < max_size:
+                    # if pattern has not reached maximum length, adding pattern to stack for the next word(s).
+                    if p2obj.n_hfws() < max_size:
                         new_stack.append(new_element)
 
-                    new_element.finish(w, index)
+                    new_element.finish(index)
 
                 # If w can also be a CW, adding original pattern object again.
                 if len(wobj.senses) == 2:
-                    new_stack.append(element)
+                    if use_CW_tokens:
+                        p3obj = element.pattern.add_cw()
+                        new_element = element.new_element(p3obj, CW_TOKEN)
 
-            patterns_stack = new_stack
+                        if new_element is not None:
+                            new_stack.append(new_element)
+                    else:
+                        new_stack.append(element)
+
+            # Pattern object of w
+            pobj = Pattern(w)
 
             # w alone can also be a pattern
             new_element = stackElement.new_element(pobj, w)
 
             if new_element is not None:
-                patterns_stack.append(new_element)
+                new_stack.append(new_element)
 
-                new_element.finish(None, index)
+                new_element.finish(index)
 
+        elif use_CW_tokens:
+            for element in patterns_stack:
+                # Pattern type mode: just one element, the pattern object.
+
+                # new pattern object: pattern object + CW
+                p2obj = element.pattern.add_cw()
+
+                # if pattern has not reached maximum length, adding pattern to stack for the next word(s).
+                new_element = element.new_element(p2obj, CW_TOKEN)
+
+                if new_element is not None:
+                    new_stack.append(new_element)
+        else:
+            continue
+
+            # patterns_stack = new_stack
+
+        patterns_stack = new_stack
+        # print(len(patterns_stack))
 
 
 class Pattern():
     def __init__(self, first_hfw):
-        self.hfws = [first_hfw]
+        self.elements = [first_hfw]
+        self._n_hfws = 1
+
+    def clone(self):
+        p = Pattern(self.elements[0])
+
+        for orig_element in self.elements[1:]:
+            p.elements.append(orig_element)
+
+        p._n_hfws = self.n_hfws()
+
+        return p
 
     def add_hfw(self, hfw):
-        p = Pattern(self.hfws[0])
+        p = self.clone()
 
-        for orig_hfw in self.hfws[1:]:
-            p.hfws.append(orig_hfw)
+        p.elements.append(hfw)
 
-        p.hfws.append(hfw)
+        p._n_hfws += 1
+
+        return p
+
+    def add_cw(self):
+        p = self.clone()
+
+        p.elements.append(CW_TOKEN)
 
         return p
 
@@ -246,17 +358,17 @@ class Pattern():
     def score(self):
         return 1./self.freq
 
-    def size(self):
-        return len(self.hfws)
+    def n_hfws(self):
+        return self._n_hfws
 
     def __str__(self):
-        return " ".join([x for x in self.hfws])
+        return " ".join([x for x in self.elements])
 
     def __hash__(self):
         return hash(self.__str__())
 
     def __eq__(self, other):
-        return (self.hfws == other.hfws)
+        return (self.elements == other.elements)
 
     def __ne__(self, other):
         return not (self == other)
@@ -304,6 +416,8 @@ if __name__ == '__main__':
     parser.add_argument("-m", "--min_pattern_frequency", help="Minimal pattern frequency", type=float, default=0.005)
     parser.add_argument("-c", "--use_CW_tokens", help="Use CW tokens in pattern", action='store_true')
     parser.add_argument("-x", "--max_pattern_len", help="Maximum number of HFWs in pattern", type=int, default=6)
+    parser.add_argument("-n", "--n_salient_features", help="Number of salient features to print", type=int, default=5)
+    parser.add_argument("-i", "--min_pattern_length", help="Minimum number of HFWs in pattern", type=int, default=1)
 
     main(parser.parse_args())
 
