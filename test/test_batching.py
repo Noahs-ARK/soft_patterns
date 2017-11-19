@@ -18,7 +18,7 @@ class TestBatching(unittest.TestCase):
         vocab, embeddings, word_dim = read_embeddings(EMBEDDINGS_FILENAME)
         self.embeddings = embeddings
         max_pattern_length = max(list(PATTERN_SPECS.keys()))
-        self.data = read_docs(DATA_FILENAME, vocab, max_pattern_length / 2)[0]
+        self.data = read_docs(DATA_FILENAME, vocab, 0)[0]
         state_dict = torch.load(MODEL_FILENAME)
         self.model = \
             SoftPatternClassifier(
