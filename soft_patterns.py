@@ -551,6 +551,7 @@ def main(args):
 
     if args.pre_computed_patterns is not None:
         pre_computed_patterns = read_patterns(args.pre_computed_patterns, pattern_specs)
+        pattern_specs = OrderedDict(sorted(pattern_specs.items(), key=lambda t: t[0]))
 
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
