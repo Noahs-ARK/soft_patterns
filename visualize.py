@@ -196,7 +196,7 @@ def main(args):
                                   vocab,
                                   semiring,
                                   args.gpu,
-                                  False)
+                                  None)
 
     if args.gpu:
         model.to_cuda()
