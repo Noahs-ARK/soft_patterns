@@ -25,6 +25,8 @@ from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP
 from util import chunked_sorted, identity
 
+CW_TOKEN = "CW"
+
 
 def to_cuda(gpu):
     return (lambda v: v.cuda()) if gpu else identity
@@ -126,7 +128,8 @@ class SoftPatternClassifier(Module):
                  embeddings,
                  vocab,
                  semiring,
-                 gpu=False):
+                 gpu=False,
+                 pre_computed_patterns=None):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
         self.vocab = vocab
@@ -135,6 +138,7 @@ class SoftPatternClassifier(Module):
         self.to_cuda = to_cuda(gpu)
 
         self.total_num_patterns = sum(pattern_specs.values())
+        print(self.total_num_patterns)
 
         self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes)
 
@@ -151,13 +155,19 @@ class SoftPatternClassifier(Module):
         ]
         self.end_states = self.to_cuda(fixed_var(LongTensor(end_states)))
 
-        diag_data_size = self.max_pattern_length * self.num_diags * self.total_num_patterns
-        diag_data = self.to_cuda(randn(diag_data_size, self.word_dim))
+        diag_data_size = self.total_num_patterns * self.num_diags * self.max_pattern_length
+        diag_data = randn(diag_data_size, self.word_dim)
+        bias_data = randn(diag_data_size, 1)
+
+        if pre_computed_patterns is not None:
+            diag_data, bias_data = self.load_pre_computed_patterns(pre_computed_patterns, diag_data, bias_data, pattern_specs)
+
+        diag_data = self.to_cuda(diag_data)
         normalize(diag_data)
         self.diags = Parameter(diag_data)
 
         # Bias term
-        self.bias = self.to_cuda(Parameter(randn(diag_data_size, 1)))
+        self.bias = self.to_cuda(Parameter(bias_data))
 
         self.epsilon = self.to_cuda(Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1)))
 
@@ -188,6 +198,64 @@ class SoftPatternClassifier(Module):
         ]
 
         return transition_matrices
+
+    def load_pre_computed_patterns(self, pre_computed_patterns, diag_data, bias_data, pattern_spec):
+        """Loading a set of pre-coputed patterns into diagonal and bias arrays"""
+        pattern_indices = dict((p,0) for p in pattern_spec)
+
+        # First,view diag_data and bias_data as 4/3d tensors
+        diag_data_size = diag_data.size()[0]
+        diag_data = diag_data.view(self.total_num_patterns, self.num_diags, self.max_pattern_length, self.word_dim)
+        bias_data = bias_data.view(self.total_num_patterns, self.num_diags, self.max_pattern_length)
+
+        n = 0
+
+        # Pattern indices: which patterns are we loading?
+        # the pattern index from which we start loading each pattern length.
+        for (i, patt_len) in enumerate(pattern_spec.keys()):
+            pattern_indices[patt_len] = n
+            n += pattern_spec[patt_len]
+
+        # Loading all pre-computed patterns
+        for p in pre_computed_patterns:
+            patt_len = len(p) + 1
+
+            # Getting pattern index in diagonal data
+            index = pattern_indices[patt_len]
+
+            # Loading diagonal and bias for p
+            diag, bias = self.load_pattern(p)
+
+            # Updating diagonal and bias
+            diag_data[index, 1, :(patt_len-1), :] = diag
+            bias_data[index, 1, :(patt_len-1)] = bias
+
+            # Updating pattern_indices
+            pattern_indices[patt_len] += 1
+
+        return diag_data.view(diag_data_size, self.word_dim), bias_data.view(diag_data_size, 1)
+
+    def load_pattern(self, patt):
+        """Loading diagonal and bias of one pattern"""
+        diag = torch.zeros(len(patt), self.word_dim)
+        bias = torch.zeros(len(patt))
+
+        factor = 10
+
+        # Traversing elements of pattern.
+        for (i, element) in enumerate(patt):
+            # CW: high bias (we don't care about the identity of the token
+            if element == CW_TOKEN:
+                bias[i] = factor
+            else:
+                # Concrete word: we do care about the token (low bias).
+                bias[i] = -factor
+
+                # If we have a word vector for this element, the diagonal value if this vector
+                if element in self.vocab:
+                    diag[i] = FloatTensor(factor*self.embeddings[self.vocab.index[element]])
+
+        return diag, bias
 
     def forward(self, batch, debug=0, dropout=None):
         """ Calculate scores for one batch of documents. """
@@ -475,8 +543,11 @@ def main(args):
     print(args)
 
     pattern_specs = OrderedDict([int(y) for y in x.split(":")] for x in args.patterns.split(","))
+    pre_computed_patterns = None
 
-    max_pattern_length = max(list(pattern_specs.keys()))
+    if args.pre_computed_patterns is not None:
+        pre_computed_patterns = read_patterns(args.pre_computed_patterns, pattern_specs)
+
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
     num_mlp_layers = args.num_mlp_layers
@@ -531,7 +602,8 @@ def main(args):
                                   embeddings,
                                   vocab,
                                   semiring,
-                                  args.gpu)
+                                  args.gpu,
+                                  pre_computed_patterns)
 
     if args.gpu:
         model.to_cuda()
@@ -590,6 +662,20 @@ def soft_pattern_arg_parser():
                    default=False, action='store_true')
     return p
 
+def read_patterns(ifile, pattern_specs):
+    with open(ifile, encoding='utf-8') as ifh:
+        pre_computed_patterns = [l.rstrip().split() for l in ifh]
+
+    for p in pre_computed_patterns:
+        l = len(p) + 1
+
+        if l not in pattern_specs:
+            pattern_specs[l] = 1
+        else:
+            pattern_specs[l] += 1
+
+    return pre_computed_patterns
+
 
 def training_arg_parser():
     p = ArgumentParser(add_help=False)
@@ -604,6 +690,7 @@ def training_arg_parser():
     p.add_argument("--input_model", help="Input model (to run test and not train)")
     p.add_argument("--td", help="Train data file", required=True)
     p.add_argument("--tl", help="Train labels file", required=True)
+    p.add_argument("--pre_computed_patterns", help="File containing pre-computed patterns")
     p.add_argument("--max_doc_len", \
                    help="Maximum doc length. For longer documents, spans of length max_doc_len will be randomly selected each iteration (-1 means no restriction)",
                    type=int, default=-1)

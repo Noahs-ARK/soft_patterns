@@ -8,11 +8,12 @@ import numpy as np
 from data import read_labels
 from sklearn import linear_model
 from scipy.sparse import lil_matrix
+from soft_patterns import CW_TOKEN
+
 
 
 INDEX_TOKEN = "###INDEX###"
 
-CW_TOKEN = "CW"
 
 def main(args):
     with open(args.work_dir+"/train.data", encoding="ISO-8859-1") as ifh:
