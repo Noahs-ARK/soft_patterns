@@ -87,11 +87,10 @@ class Batch:
         if max_len != -1 and max_doc_len > max_len:
             max_doc_len = max_len
 
-            # For longer documents, we randomly select a sequence of words of length max_len.
-            starts = [np.random.randint(0, len(doc)-max_len) if len(doc) > max_len else 0 for doc in docs]
+            # For longer documents, cap documents at max_len
             docs = [
-                doc[starts[i]:starts[i]+max_len]
-                for i, doc in enumerate(docs)
+                doc[:max_len]
+                for doc in docs
             ]
 
         self.max_doc_len = max_doc_len
@@ -664,7 +663,7 @@ def soft_pattern_arg_parser():
 
 def read_patterns(ifile, pattern_specs):
     with open(ifile, encoding='utf-8') as ifh:
-        pre_computed_patterns = [l.rstrip().split() for l in ifh]
+        pre_computed_patterns = [l.rstrip().split() for l in ifh if len(l.rstrip())]
 
     for p in pre_computed_patterns:
         l = len(p) + 1

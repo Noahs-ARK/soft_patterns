@@ -131,41 +131,6 @@ def gen_salient_patterns(train_features, clf, pattern_keys, n=5):
 
     print(["{}, '{}': {:,.3f}".format(i, pattern_keys[i].__str__(), weights[i]) for i in top_n])
     print(["{},'{}': {:,.3f}".format(i, pattern_keys[i].__str__(), weights[i]) for i in last_n])
-    # print(last_n, [(pattern_keys[i].__str__(), round(weights[i], 3)) for i in last_n])
-
-    # print("Getting top")
-    # top_n_freq = get_freq(features, top_n)
-    # last_n_freq = get_freq(features, last_n)
-    # print("done Getting top")
-
-    # with open(sys.argv[2], 'r') as ifh:
-    #     ifh.readline()
-    #     lines = ifh.readlines()
-    #
-    #     nl = len(lines)
-    #
-    #     if (n > nl):
-    #         n = nl
-    #
-    #     print
-    #     "Positive"
-    #     for w in top_n:
-    #         if (w >= len(lines)):
-    #             print
-    #             "length\t" + str(w) + "\t-\t-\t" + str(round(weights[w], 3))
-    #         else:
-    #             print
-    #             lines[w].rstrip() + "\t" + str(top_n_freq[w]) + "\t" + str(round(weights[w], 3))
-    #
-    #     print
-    #     "\nNegative"
-    #     for w in last_n:
-    #         if (w >= len(lines)):
-    #             print
-    #             "length\t" + str(w) + "\t-" + str(round(weights[w], 3))
-    #         else:
-    #             print
-    #             lines[w].rstrip() + "\t" + str(last_n_freq[w]) + "\t" + str(round(weights[w], 3))
 
 
 def build_trie(patterns):
