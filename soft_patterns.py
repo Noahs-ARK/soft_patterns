@@ -137,7 +137,7 @@ class SoftPatternClassifier(Module):
         self.to_cuda = to_cuda(gpu)
 
         self.total_num_patterns = sum(pattern_specs.values())
-        print(self.total_num_patterns)
+        print(self.total_num_patterns, pattern_specs)
 
         self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes)
 
@@ -152,6 +152,7 @@ class SoftPatternClassifier(Module):
             for pattern_len, num_patterns in self.pattern_specs.items()
             for end in num_patterns * [pattern_len - 1]
         ]
+
         self.end_states = self.to_cuda(fixed_var(LongTensor(end_states)))
 
         diag_data_size = self.total_num_patterns * self.num_diags * self.max_pattern_length
@@ -541,7 +542,9 @@ def train(train_data,
 def main(args):
     print(args)
 
-    pattern_specs = OrderedDict([int(y) for y in x.split(":")] for x in args.patterns.split(","))
+    pattern_specs = OrderedDict(sorted(([int(y) for y in x.split(":")] for x in args.patterns.split(",")),
+                                key=lambda t: t[0]))
+
     pre_computed_patterns = None
 
     if args.pre_computed_patterns is not None:

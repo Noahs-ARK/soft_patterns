@@ -162,8 +162,9 @@ def get_top_scoring_sequences(self, dev_set, max_batch_size):
 def main(args):
     print(args)
 
-    pattern_specs = OrderedDict([int(y) for y in x.split(":")] for x in args.patterns.split(","))
-    max_pattern_length = max(list(pattern_specs.keys()))
+    pattern_specs = OrderedDict(sorted(([int(y) for y in x.split(":")] for x in args.patterns.split(",")),
+                                       key=lambda t: t[0]))
+
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
     num_mlp_layers = args.num_mlp_layers
