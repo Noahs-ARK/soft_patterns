@@ -26,6 +26,7 @@ from mlp import MLP
 from util import chunked_sorted, identity
 
 CW_TOKEN = "CW"
+EPSILON = 1e-10
 
 
 def to_cuda(gpu):
@@ -159,11 +160,12 @@ class SoftPatternClassifier(Module):
         diag_data = randn(diag_data_size, self.word_dim)
         bias_data = randn(diag_data_size, 1)
 
+        normalize(diag_data)
+
         if pre_computed_patterns is not None:
             diag_data, bias_data = self.load_pre_computed_patterns(pre_computed_patterns, diag_data, bias_data, pattern_specs)
 
         diag_data = self.to_cuda(diag_data)
-        normalize(diag_data)
         self.diags = Parameter(diag_data)
 
         # Bias term
@@ -237,7 +239,7 @@ class SoftPatternClassifier(Module):
 
     def load_pattern(self, patt):
         """Loading diagonal and bias of one pattern"""
-        diag = torch.zeros(len(patt), self.word_dim)
+        diag = EPSILON * torch.randn(len(patt), self.word_dim)
         bias = torch.zeros(len(patt))
 
         factor = 10
