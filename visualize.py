@@ -11,7 +11,7 @@ from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
 from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
     LogSpaceMaxTimesSemiring, soft_pattern_arg_parser
-from util import chunked
+from util import chunked_sorted
 
 SCORE_IDX = 0
 START_IDX_IDX = 1
@@ -29,6 +29,7 @@ def get_nearest_neighbors(w, embeddings, k=1000):
 
 
 def visualize_patterns(model,
+                       semiring,
                        batch_size,
                        dev_set=None,
                        dev_text=None,
@@ -36,7 +37,7 @@ def visualize_patterns(model,
     num_patterns = model.total_num_patterns
     pattern_length = model.max_pattern_length
 
-    scores = get_top_scoring_sequences(model, dev_set, batch_size)
+    scores = get_top_scoring_sequences(model, semiring, dev_set, batch_size)
 
     nearest_neighbors = \
         get_nearest_neighbors(
@@ -97,21 +98,21 @@ def visualize_patterns(model,
         print()
 
 
-def get_top_scoring_sequences(self, dev_set, max_batch_size):
+def get_top_scoring_sequences(self, semiring, dev_set, max_batch_size):
     """
     Get top scoring sequence in doc for this pattern (for interpretation purposes)
     """
-    rig = MaxPlusSemiring
     debug_print = int(100 / max_batch_size) + 1
 
     # max_scores[pattern_idx, doc_idx, 0] = `score` of best span
     # max_scores[pattern_idx, doc_idx, 1] = `start_token_idx` of best span
     # max_scores[pattern_idx, doc_idx, 2] = `end_token_idx + 1` of best span
-    max_scores = rig.zero(self.total_num_patterns, len(dev_set), 3)
+    max_scores = semiring.zero(self.total_num_patterns, len(dev_set), 3)
 
     eps_value = self.get_eps_value()
 
-    for batch_idx, chunk in enumerate(chunked(dev_set, max_batch_size)):
+    delta = 0
+    for batch_idx, chunk in enumerate(chunked_sorted(dev_set, max_batch_size)):
         if batch_idx % debug_print == debug_print - 1:
             print(".", end="", flush=True)
 
@@ -148,11 +149,13 @@ def get_top_scoring_sequences(self, dev_set, max_batch_size):
                 active_doc_idxs = torch.nonzero(torch.gt(batch.doc_lens, end_token_idx)).squeeze()
                 for pattern_idx in range(num_patterns):
                     for doc_idx in active_doc_idxs:
+                        abs_idx = delta + doc_idx
                         score = scores[doc_idx, pattern_idx].data[0]
-                        if score >= max_scores[pattern_idx, doc_idx, SCORE_IDX]:
-                            max_scores[pattern_idx, doc_idx, SCORE_IDX] = score
-                            max_scores[pattern_idx, doc_idx, START_IDX_IDX] = start_token_idx
-                            max_scores[pattern_idx, doc_idx, END_IDX_IDX] = end_token_idx + 1
+                        if score >= max_scores[pattern_idx, abs_idx, SCORE_IDX]:
+                            max_scores[pattern_idx, abs_idx, SCORE_IDX] = score
+                            max_scores[pattern_idx, abs_idx, START_IDX_IDX] = start_token_idx
+                            max_scores[pattern_idx, abs_idx, END_IDX_IDX] = end_token_idx + 1
+        delta += batch.size()
 
     print()
     return max_scores
@@ -206,7 +209,7 @@ def main(args):
     state_dict = torch.load(args.input_model)
     model.load_state_dict(state_dict)
 
-    visualize_patterns(model, args.batch_size, dev_data, dev_text)
+    visualize_patterns(model, semiring, args.batch_size, dev_data, dev_text)
 
     return 0
 

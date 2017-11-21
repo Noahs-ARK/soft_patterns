@@ -44,7 +44,12 @@ maxplus=$(get_param ${f} maxplus)
 if [ "${maxplus}" == 'True' ]; then
     maxplus="--maxplus"
 else
-    maxplus=''
+    maxtimes=$(get_param ${f} maxtimes)
+    if [ "${maxtimes}" == 'True' ]; then
+        maxplus="--maxtimes"
+    else
+        maxplus=''
+    fi
 fi
 
 
@@ -54,6 +59,7 @@ patterns=$(get_param ${f} patterns)
 vd=$(get_param ${f} vd)
 vl=$(get_param ${f} vl)
 
+
 com="python -u visualize.py  \
     -e ${e} \
     -p ${patterns} \
@@ -61,6 +67,8 @@ com="python -u visualize.py  \
     --vl ${vl} \
     -d ${mlp_hidden_dim} \
     ${maxplus} \
+    -n 100\
+    -b 60 \
     --num_mlp_layers ${num_mlp_layers} \
     --input_model ${model_dir}/model_${model_num}.pth"
 
