@@ -18,7 +18,8 @@ mtf=''
 mts=''
 glove_index=0
 gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
-
+dirs=(stanford_sentiment_binary amazon_reviews ROC_stories)
+datadir_index=0
 
 
 if [ -z ${WORK+x} ]; then
@@ -32,19 +33,20 @@ else
     fi
 fi
 
-if [ -z ${data_dir+x} ]; then
-    data_dir=${WORK}/resources
+if [ -z ${resource_dir+x} ]; then
+    resource_dir=${WORK}/resources
 fi
-
-sst_dir="${data_dir}/text_cat/stanford_sentiment_binary"
-glove_dir="${data_dir}/glove"
 
 
 
 suffix=''
 
 if [ "$#" -lt 4 ]; then
-	echo "Usage: $0 <Pattern specification> <MLP dim> <Learning rate> <dropout> <reschedule=$r> <maxplus=$mp (1 for maxplus, 2 for maxtimes, 0 for prob)> <batch size=$b> <gradient clipping (optional)> <gpu (optional)> <glove index=$glove_index (${gloves[@]})> <file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases, 3 -- fine grained categories, 4 -- fine grained categories with phrases)> <word_dropout=$w>"
+	echo "Usage: $0 <Pattern specification> <MLP dim> <Learning rate> <dropout> <reschedule=$r>"\
+	 "<maxplus=$mp (1 for maxplus, 2 for maxtimes, 0 for prob)> <batch size=$b> <gradient clipping (optional)>" \
+	  "<gpu (optional)> <glove index=$glove_index (${gloves[@]})>" \
+	  "<file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases, 3 -- fine grained categories, 4 -- fine grained categories with phrases)>" \
+	   "<word_dropout=$w> <data dir: 0 -- stanford (default), 1 -- amazon, 2 -- ROC stories>"
 	exit -1
 elif [ "$#" -gt 4 ]; then
 	r=$5
@@ -87,6 +89,9 @@ elif [ "$#" -gt 4 ]; then
 								exit -2
 							fi
 							if [ "$#" -gt 11 ]; then
+                                if [ "$#" -gt 12 ]; then
+                                    datadir_index=${13}
+                                fi
                                 w=${12}
                             fi
 						fi
@@ -108,18 +113,22 @@ glove=${gloves[$glove_index]}
 
 git_tag=$(git log | head -1 | awk '{print $2}' | cut -b-7)
 
-s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_w${w}_${git_tag}
+s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_w${w}_${dirs[$datadir_index]}_${git_tag}
 odir=${model_dir}/output_${s}
+
+data_dir="${resource_dir}/text_cat/${dirs[$datadir_index]}"
+glove_dir="${resource_dir}/glove"
+
 
 
 mkdir -p ${odir}
 
 com="python -u soft_patterns.py        \
          -e ${glove_dir}/glove.${glove}.txt         \
-        --td ${sst_dir}/train$suffix.data    \
-        --tl ${sst_dir}/train$suffix.labels  \
-        --vd ${sst_dir}/dev$suffix.data      \
-        --vl ${sst_dir}/dev.labels           \
+        --td ${data_dir}/train$suffix.data    \
+        --tl ${data_dir}/train$suffix.labels  \
+        --vd ${data_dir}/dev$suffix.data      \
+        --vl ${data_dir}/dev.labels           \
         --model_save_dir $odir \
         -i 250 \
          -p $p \
