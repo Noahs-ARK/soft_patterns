@@ -611,7 +611,7 @@ def main(args):
                                   pre_computed_patterns)
 
     if args.gpu:
-        model.to_cuda()
+        model.to_cuda(model)
 
     model_file_prefix = 'model'
     # Loading model
