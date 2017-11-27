@@ -20,6 +20,7 @@ glove_index=0
 gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
 dirs=(stanford_sentiment_binary amazon_reviews ROC_stories)
 datadir_index=0
+seed=100
 
 
 if [ -z ${WORK+x} ]; then
@@ -46,7 +47,7 @@ if [ "$#" -lt 4 ]; then
 	 "<maxplus=$mp (1 for maxplus, 2 for maxtimes, 0 for prob)> <batch size=$b> <gradient clipping (optional)>" \
 	  "<gpu (optional)> <glove index=$glove_index (${gloves[@]})>" \
 	  "<file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases, 3 -- fine grained categories, 4 -- fine grained categories with phrases)>" \
-	   "<word_dropout=$w> <data dir: 0 -- stanford (default), 1 -- amazon, 2 -- ROC stories>"
+	   "<word_dropout=$w> <data dir: 0 -- stanford (default), 1 -- amazon, 2 -- ROC stories> <seed=$seed>"
 	exit -1
 elif [ "$#" -gt 4 ]; then
 	r=$5
@@ -89,11 +90,14 @@ elif [ "$#" -gt 4 ]; then
 								exit -2
 							fi
 							if [ "$#" -gt 11 ]; then
-                                if [ "$#" -gt 12 ]; then
-                                    datadir_index=${13}
-                                fi
-                                w=${12}
-                            fi
+                               					if [ "$#" -gt 12 ]; then
+				                                    datadir_index=${13}
+                               					    if [ "$#" -gt 13 ]; then
+				                                        seed=${14}
+                                				    fi
+                                				fi
+                                				w=${12}
+                            				fi
 						fi
 					fi
 				fi
@@ -113,7 +117,7 @@ glove=${gloves[$glove_index]}
 
 git_tag=$(git log | head -1 | awk '{print $2}' | cut -b-7)
 
-s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_w${w}_${dirs[$datadir_index]}_${git_tag}
+s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_w${w}_${dirs[$datadir_index]}_seed${seed}_${git_tag}
 odir=${model_dir}/output_${s}
 
 data_dir="${resource_dir}/text_cat/${dirs[$datadir_index]}"
@@ -136,6 +140,8 @@ com="python -u soft_patterns.py        \
         -d $dim \
         -l $lr $rf $mpf $clip $gpu\
         -b $b \
+	--max_doc_len 100 \
+	--seed $seed \
 	-w $w"
 
 echo ${com}
@@ -169,5 +175,5 @@ if [[ "$HOSTNAME" == *.stampede2.tacc.utexas.edu ]]; then
 
     sbatch ${f}
 else
-    ${com} | tee ${odir}/output.dat
+    ${com} |& tee ${odir}/output.dat
 fi
