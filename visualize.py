@@ -80,7 +80,7 @@ def visualize_patterns(model,
         print("Highest scoring spans:")
         for k, d in enumerate(k_best_doc_idxs):
             score, text = span_text(d)
-            print("{} {:2.3f}  {}".format(k, score, text.encode('utf-8')))
+            print("{} {} {:2.3f}  {}".format(k, d, score, text.encode('utf-8')))
         print("self-loops: ",
               ", ".join(
                   transition_str(norm, neighb, bias)
