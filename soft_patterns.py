@@ -455,6 +455,7 @@ def train(train_data,
 
     best_dev_loss = 100000000
     best_dev_loss_index = -1
+    best_dev_acc = -1
     start_time = monotonic()
 
     for it in range(num_iterations):
@@ -522,6 +523,9 @@ def train(train_data,
         )
 
         if dev_loss < best_dev_loss:
+            if dev_acc > best_dev_acc:
+                best_dev_acc = dev_acc
+                print("New best acc!")
             print("New best dev!")
             best_dev_loss = dev_loss
             best_dev_loss_index = 0
@@ -534,6 +538,15 @@ def train(train_data,
             if best_dev_loss_index == patience:
                 print("Reached", patience, "iterations without improving dev loss. Breaking")
                 break
+
+        if dev_acc > best_dev_acc:
+            best_dev_acc = dev_acc
+            print("New best acc!")
+            if model_save_dir is not None:
+                model_save_file = os.path.join(model_save_dir, "{}_{}.pth".format(model_file_prefix, it))
+                print("saving model to", model_save_file)
+                torch.save(model.state_dict(), model_save_file)
+
 
         if run_scheduler:
             scheduler.step(dev_loss)
