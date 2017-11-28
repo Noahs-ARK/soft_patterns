@@ -2,10 +2,11 @@
 
 import sys
 import os.path
+import glob
 import numpy as np
 
-
-workdir="~/work/soft_patterns/"
+home = os.environ.get('HOME')
+workdir=home+"/work/soft_patterns/"
 
 def main(args):
     if len(args) < 2:
@@ -31,7 +32,7 @@ def main(args):
                 for t in t_keys:
                         for d in d_keys:
                             for s in s_keys:
-                                f='{}output_p{}_d{}_l{}_t{}_r_mt_b150_clip0_840B.300d_w0.1_{}_seed{}_b67fc27'.format(
+                                f='{}output_p{}_d{}_l{}_t{}_r_mt_b150_clip0_840B.300d_w0.1_{}_seed{}_*/output.dat'.format(
                                         workdir, p, d, l, t, dataset, s)
                                 best = get_top(f)
 
@@ -55,22 +56,23 @@ def analyze(str, kv):
 
     for k,v in kv.items():
         if len(v):
-            print("\t", k, np.max(v), np.mean(v), len(v))
+            print("\t{}: Max: {:,.3f}, Mean: {:,.3f} {}".format(k, np.max(v), np.mean(v), len(v)))
         else:
             print("\t",k,"No files")
 
 def get_top(f):
+    fs = glob.glob(f)
+    if not len(fs):
+        return -1
+    
     maxv = -1
 
-    if not os.path.isfile(f):
-        return -1
-
-    with open(f) as ifh:
+    with open(fs[0]) as ifh:
         for l in ifh:
-            if l.find('loss') != -1:
+            if l.find('dev loss:') != -1:
                 e = l.rstrip().split()
 
-                acc = e[-1][:-1]
+                acc = float(e[-1][:-1])
 
                 if acc > maxv:
                     maxv = acc
