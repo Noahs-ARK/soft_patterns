@@ -53,20 +53,30 @@ class DanClassifier(Module):
 
     def forward(self, batch, debug=0, dropout=None):
         """ Average all word vectors in the doc, and feed into an MLP """
-        for doc in batch.docs:
-            n = len(doc)
-            doc_vectors = torch.index_select(batch.embeddings_matrix, 1, doc)
-            if dropout:
-                # dropout entire words at a time
-                doc_vectors = self.dropout(doc_vectors.view(self.word_dim, 1, n)).view(self.word_dim, n)
-            avg_word_vector = torch.sum(doc_vectors, dim=1) / n
-            return self.mlp.forward(avg_word_vector)
+        n = batch.max_doc_len
+        docs_vectors = [
+            torch.index_select(batch.embeddings_matrix, 1, doc)
+            for doc in batch.docs
+        ]
+
+        if dropout:
+            # dropout entire words at a time
+            docs_vectors = [
+                self.dropout(doc_vectors.view(self.word_dim, 1, n)).view(self.word_dim, n)
+                for doc_vectors in docs_vectors
+            ]
+
+        avg_word_vector = torch.sum(torch.stack(docs_vectors), dim=2)
+
+        avg_word_vector = torch.div(avg_word_vector.t(), torch.autograd.Variable(batch.doc_lens.float())).t()
+
+        return self.mlp.forward(avg_word_vector)
 
     def predict(self, batch, debug=0):
         old_training = self.training
         self.train(False)
         output = self.forward(batch, debug=debug).data
-        _, am = torch.max(output, 0)
+        _, am = torch.max(output, 1)
         self.train(old_training)
         return [int(x) for x in am]
 
@@ -121,6 +131,9 @@ def main(args):
                           embeddings,
                           gpu=args.gpu,
                           dropout=dropout)
+
+    if args.gpu:
+        model.to_cuda(model)
 
     model_file_prefix = 'model'
     # Loading model
