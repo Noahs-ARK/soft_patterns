@@ -34,6 +34,7 @@ for lr in 0.1 0.05 0.01 0.005 0.001; do
 				-w $w \
 				-i 250 \
 				-d $d \
+				-g \
 				-e $e"
 			echo $com
 			$com | tee $local_d/output.dat

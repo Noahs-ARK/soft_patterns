@@ -122,6 +122,9 @@ def main(args):
                           gpu=args.gpu,
                           dropout=dropout)
 
+    if args.gpu:
+        model.to_cuda(model)
+
     model_file_prefix = 'model'
     # Loading model
     if args.input_model is not None:
