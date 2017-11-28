@@ -22,7 +22,7 @@ m=$HOME/work/soft_patterns/baselines/dan/$1/
 for lr in 0.1 0.05 0.01 0.005 0.001; do
 	for t in 0.1 0.2 0.3 0.4; do
 		for d in 10 50 100 300; do
-			local_d=$m/l${lr}_w${w}_d${d}
+			local_d=$m/l${lr}_t${t}_d${d}
 			mkdir -p  $local_d
 			com="python -u baselines/dan.py \
 				--td $td \
