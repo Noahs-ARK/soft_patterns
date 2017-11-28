@@ -3,7 +3,7 @@
 set -e
 
 if [ $# -lt 1 ]; then
-	echo "Usage: $0 <dataset>"
+	echo "Usage: $0 <dataset (amazon_reviews, stanford_sentiment_binary, ROC_stories)>"
 	exit -1
 fi
 
@@ -16,7 +16,7 @@ tl=$data_dir/train.labels
 vl=$data_dir/dev.labels
 
 e=$base_dir/glove/glove.840B.300d.txt
-m=$HOME/work/soft_patterns/baselines/dan/$1/
+m=$HOME/work/soft_patterns/baselines/dan_b150/$1/
 
 
 for lr in 0.1 0.05 0.01 0.005 0.001; do
@@ -33,8 +33,9 @@ for lr in 0.1 0.05 0.01 0.005 0.001; do
 				-l $lr \
 				-t $t \
 				-i 250 \
+				-b 150 \
 				-d $d \
-				-g \
+				-g -r \
 				-e $e"
 			echo $com
 			$com | tee $local_d/output.dat
