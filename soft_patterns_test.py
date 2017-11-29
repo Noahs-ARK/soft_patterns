@@ -22,7 +22,7 @@ def main(args):
 
     pattern_specs = OrderedDict([int(y) for y in x.split(":")] for x in args.patterns.split(","))
     max_pattern_length = max(list(pattern_specs.keys()))
-    n = args.num_test_instances
+    n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
     num_mlp_layers = args.num_mlp_layers
 
