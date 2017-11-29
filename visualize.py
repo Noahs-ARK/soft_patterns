@@ -42,7 +42,7 @@ def visualize_patterns(model,
     nearest_neighbors = \
         get_nearest_neighbors(
             model.diags.data,
-            torch.FloatTensor(model.embeddings).t()
+            model.to_cuda(torch.FloatTensor(model.embeddings).t())
         ).view(
             num_patterns,
             model.num_diags,
@@ -203,7 +203,7 @@ def main(args):
                                   None)
 
     if args.gpu:
-        model.to_cuda()
+        model.to_cuda(model)
 
     # Loading model
     state_dict = torch.load(args.input_model)
