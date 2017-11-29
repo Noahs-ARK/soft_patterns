@@ -7,8 +7,9 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
 import sys
 import torch
+import numpy as np
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
-from soft_patterns import MaxPlusSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring, training_arg_parser, \
+from soft_patterns import MaxPlusSemiring, LogSpaceMaxTimesSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring, training_arg_parser, \
     soft_pattern_arg_parser
 
 SCORE_IDX = 0
@@ -20,7 +21,8 @@ END_IDX_IDX = 2
 def main(args):
     print(args)
 
-    pattern_specs = OrderedDict([int(y) for y in x.split(":")] for x in args.patterns.split(","))
+    pattern_specs = OrderedDict(sorted(([int(y) for y in x.split(":")] for x in args.patterns.split(",")),
+                                key=lambda t: t[0]))
     max_pattern_length = max(list(pattern_specs.keys()))
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
@@ -32,7 +34,11 @@ def main(args):
     vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
-    dev_input, dev_text = read_docs(args.vd, vocab, max_pattern_length/2)
+    if args.seed != -1:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+
+    dev_input, dev_text = read_docs(args.vd, vocab, 0)
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
     if n is not None:
@@ -41,10 +47,10 @@ def main(args):
     num_classes = len(set(dev_labels))
     print("num_classes:", num_classes)
 
-    semiring = MaxPlusSemiring if args.maxplus else ProbSemiring
-
-    epsilon_scale_value = args.epsilon_scale_value if args.epsilon_scale_value is not None else semiring.one([1])
-    self_loop_scale_value = args.self_loop_scale_value if args.self_loop_scale_value is not None else semiring.one([1])
+    semiring = \
+        MaxPlusSemiring if args.maxplus else (
+            LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
+        )
 
     model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
@@ -53,12 +59,10 @@ def main(args):
                                   embeddings,
                                   vocab,
                                   semiring,
-                                  epsilon_scale_value,
-                                  self_loop_scale_value,
                                   args.gpu)
 
     if args.gpu:
-        model.to_cuda()
+        model.to_cuda(model)
 
     # Loading model
     state_dict = torch.load(args.input_model)
