@@ -123,9 +123,11 @@ odir=${model_dir}/output_${s}
 data_dir="${resource_dir}/text_cat/${dirs[$datadir_index]}"
 glove_dir="${resource_dir}/glove"
 
-
-
 mkdir -p ${odir}
+
+if [ $d -eq 0 ]; then
+    d="0 -y 1"
+fi
 
 com="python -u soft_patterns.py        \
          -e ${glove_dir}/glove.${glove}.txt         \
