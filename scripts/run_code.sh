@@ -125,8 +125,8 @@ glove_dir="${resource_dir}/glove"
 
 mkdir -p ${odir}
 
-if [ $d -eq 0 ]; then
-    d="0 -y 1"
+if [ $dim -eq 0 ]; then
+    dim="0 -y 1"
 fi
 
 com="python -u soft_patterns.py        \
