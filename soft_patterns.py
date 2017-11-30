@@ -169,9 +169,9 @@ class SoftPatternClassifier(Module):
         self.diags = Parameter(diag_data)
 
         # Bias term
-        self.bias = self.to_cuda(Parameter(bias_data))
+        self.bias = Parameter(self.to_cuda(bias_data))
 
-        self.epsilon = self.to_cuda(Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1)))
+        self.epsilon = Parameter(self.to_cuda(randn(self.total_num_patterns, self.max_pattern_length - 1)))
 
         # TODO: learned? hyperparameter?
         self.epsilon_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
