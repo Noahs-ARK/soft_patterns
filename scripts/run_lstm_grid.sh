@@ -23,7 +23,7 @@ for lr in 0.01 0.005 0.001; do
 	for t in 0.05 0.1 0.2; do
 		for d in 10 25 50 100; do
 		    for h in 100 200 300; do
-                local_d=$m/l${lr}_t${t}_d${d}_h{$h}
+                local_d=$m/l${lr}_t${t}_d${d}_h${h}
                 mkdir -p  $local_d
                 com="python -u baselines/lstm.py \
                     --td $td \
@@ -33,7 +33,7 @@ for lr in 0.01 0.005 0.001; do
                     -m $local_d 	\
                     -l $lr \
                     -t $t \
-                    -h $h \
+                    --hidden_dim $h \
                     -i 250 \
                     -b 150 \
                     -d $d \
@@ -41,6 +41,7 @@ for lr in 0.01 0.005 0.001; do
                     -e $e"
                 echo $com
                 $com | tee $local_d/output.dat
+#                break
             done
 		done
 	done
