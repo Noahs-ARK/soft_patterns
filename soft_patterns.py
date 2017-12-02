@@ -79,7 +79,7 @@ LogSpaceMaxTimesSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, l
 
 
 class Batch:
-    def __init__(self, docs, embeddings, cuda, dropout=0, max_len=-1):
+    def __init__(self, docs, embeddings, cuda, word_dropout=0, max_len=-1):
         """ Makes a smaller vocab of only words used in the given docs """
         mini_vocab = Vocab.from_docs(docs, default=0)
         max_doc_len = max(len(doc) for doc in docs)
@@ -95,11 +95,11 @@ class Batch:
             ]
 
         self.max_doc_len = max_doc_len
-        if dropout:
+        if word_dropout:
             docs = [
-                [0 if np.random.rand() < dropout else x for x in doc]
-            for doc in docs
-        ]
+                [0 if np.random.rand() < word_dropout else x for x in doc]
+                for doc in docs
+            ]
 
         self.docs = [
             cuda(fixed_var(torch.LongTensor(mini_vocab.numberize(doc) + [0] * (max_doc_len - len(doc)))))
@@ -612,7 +612,6 @@ def main(args):
             LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
         )
 
-
     model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
                                   num_mlp_layers,
@@ -679,6 +678,7 @@ def soft_pattern_arg_parser():
                    help="Use max-times semiring instead of plus-times",
                    default=False, action='store_true')
     return p
+
 
 def read_patterns(ifile, pattern_specs):
     with open(ifile, encoding='utf-8') as ifh:
