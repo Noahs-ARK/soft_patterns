@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+#set -e
 
 if [ $# -lt 1 ]; then
 	echo "Usage: $0 <dataset (amazon_reviews, stanford_sentiment_binary, ROC_stories)>"
@@ -42,6 +42,12 @@ for lr in ${ls[@]}; do
 	for w in ${ws[@]}; do
 		for d in ${ds[@]}; do
 		    let i++
+
+            if [ ${ind2[$i]} -eq 0 ]; then
+			    echo $i randomed out
+			    continue
+			fi
+
 			local_d=$m/l${lr}_t${t}_d${d}
 			mkdir -p  $local_d
 			com="python -u baselines/dan.py \
