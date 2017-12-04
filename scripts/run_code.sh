@@ -18,7 +18,7 @@ mtf=''
 mts=''
 glove_index=0
 gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
-dirs=(stanford_sentiment_binary amazon_reviews ROC_stories)
+dirs=(stanford_sentiment_binary amazon_reviews ROC_stories stanford_sentiment_binary_100 stanford_sentiment_binary_500 stanford_sentiment_binary_1000 stanford_sentiment_binary_2500)
 datadir_index=0
 seed=100
 

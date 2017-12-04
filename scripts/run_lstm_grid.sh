@@ -43,15 +43,16 @@ function gen_cluster_file {
     echo ${f}
 }
 
-ind=($(seq 0 107 | sort -R))
+n=107
+ind=($(seq 0 $n | sort -R))
 
-ind2=($(seq 0 107))
+ind2=($(seq 0 $n))
 
 for i in {0..19}; do
 	ind2[${ind[$i]}]=1
 done
 
-for i in {20..107}; do
+for i in $(seq 20 $n); do
 	ind2[${ind[$i]}]=0
 done
 
