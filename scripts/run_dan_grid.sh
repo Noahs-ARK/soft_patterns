@@ -18,10 +18,30 @@ vl=$data_dir/dev.labels
 e=$base_dir/glove/glove.840B.300d.txt
 m=$HOME/work/soft_patterns/baselines/dan_b150/$1/
 
+ls=(0.1 0.05 0.01 0.005 0.001)
+ws=(0.1 0.2 0.3 0.4)
+ds=(10 50 100 300)
 
-for lr in 0.1 0.05 0.01 0.005 0.001; do
-	for t in 0.1 0.2 0.3 0.4; do
-		for d in 10 50 100 300; do
+n=$(echo "${#ls[@]} * ${#ws[@]} * ${#ds[@]}" | bc -l)
+
+echo $n
+ind=($(seq 0 $n | sort -R))
+
+ind2=($(seq 0 $n))
+
+for i in {0..19}; do
+	ind2[${ind[$i]}]=1
+done
+
+for i in $(seq 20 $n); do
+	ind2[${ind[$i]}]=0
+done
+
+i=-1
+for lr in ${ls[@]}; do
+	for w in ${ws[@]}; do
+		for d in ${ds[@]}; do
+		    let i++
 			local_d=$m/l${lr}_t${t}_d${d}
 			mkdir -p  $local_d
 			com="python -u baselines/dan.py \
