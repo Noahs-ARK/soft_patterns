@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import sys
+import re
 import os.path
 import glob
 import numpy as np
@@ -8,74 +9,132 @@ import numpy as np
 home = os.environ.get('HOME')
 workdir=home+"/work/soft_patterns/"
 
+def add_val(res, index, odict):
+    v = res.group(index)
+    #print(v,'for',index)
+
+    if v not in odict:
+        odict[v] = []
+
+    return v
+
 def main(args):
+    type = 0
     if len(args) < 2:
-        print("Usage:",args[0],"<dataset name>")
+        print("Usage:",args[0],"<dataset name> <type (0 for accuracy [default], 1 for loss)>")
         return -1
+    elif len(args) > 2:
+        type = int(args[2])
 
     dataset = args[1]
 
-    p_keys = ['6-20_5-20_4-10_3-10_2-10', '6-10_5-10_4-10_3-10_2-10', '7-10_6-10_5-10_4-10_3-10_2-10']
-    l_keys = ['0.01', '0.005', '0.001']
-    t_keys = ['0.05', '0.1', '0.2']
-    d_keys = ['10', '25', '50', '100']
-    s_keys = ['25', '50', '100']
+    s=workdir+'/'+'output_p*_d*_l*_t*_r_mt_b150_clip0_840B.300d_w*_'+dataset+'_seed*_*/output.dat'
+    files = glob.glob(s)
 
-    ps = dict([(k, []) for k in p_keys])
-    ls = dict([(k, []) for k in l_keys])
-    ts = dict([(k, []) for k in t_keys])
-    ds = dict([(k, []) for k in d_keys])
-    ss = dict([(k, []) for k in s_keys])
+    if len(files) == 0:
+        print("No files found for", dataset)
+        return -2
 
-    for p in p_keys:
-        for l in l_keys:
-                for t in t_keys:
-                        for d in d_keys:
-                            for s in s_keys:
-                                f='{}output_p{}_d{}_l{}_t{}_r_mt_b150_clip0_840B.300d_w0.1_{}_seed{}_*/output.dat'.format(
-                                        workdir, p, d, l, t, dataset, s)
-                                best = get_top(f)
+    ps = dict()
+    ls = dict()
+    ts = dict()
+    ds = dict()
+    ss = dict()
+    ws = dict()
+    reg = re.compile("output_p(.*)_d([0-9]+)_l([0-9\.]+)_t([0-9\.]+)_r_mt_b150_clip0_840B\.300d_w([0-9\.]+)_"+dataset+'_seed(\d+)_\w+')
 
-                                if best != -1:
-                                    ps[p].append(best)
-                                    ls[l].append(best)
-                                    ts[t].append(best)
-                                    ds[d].append(best)
-                                    ss[s].append(best)
+    global_best = None
+    global_best_val = -1 if type == 0 else 1000
 
-    analyze("patterns", ps)
-    analyze("learning rate", ls)
-    analyze("dropout", ts)
-    analyze("dimension", ds)
-    analyze("seed", ss)
+    for f in files:
+        fname = f.split("/")[-2]
+        res = reg.match(fname)
 
+        if res is None:
+            print(fname,"doesn't match regexp")
+            return
+
+        best = get_top(f, type)
+
+        if best != -1:
+            p = add_val(res, 1, ps)
+            d = add_val(res, 2, ds)
+            l = add_val(res, 3, ls)
+            t = add_val(res, 4, ts)
+            w = add_val(res, 5, ws)
+            s = add_val(res, 6, ss)
+
+            if best > global_best_val and type == 0 or (best < global_best_val and type == 1):
+                global_best = f
+                global_best_val = best
+
+            ps[p].append(best)
+            ds[d].append(best)
+            ls[l].append(best)
+            ts[t].append(best)
+            ws[w].append(best)
+            ss[s].append(best)
+
+    analyze("patterns", ps, type)
+    analyze("learning rate", ls, type)
+    analyze("dropout", ts, type)
+    analyze("dimension", ds, type)
+    analyze("seed", ss, type)
+    analyze("word dropout", ws, type)
+
+    print("Overall best: {} ({})".format(global_best_val, global_best))
     return 0
 
-def analyze(str, kv):
+def analyze(str, kv, type):
     print(str+":")
 
     for k,v in kv.items():
         if len(v):
-            print("\t{}: Max: {:,.3f}, Mean: {:,.3f} {}".format(k, np.max(v), np.mean(v), len(v)))
+            print("\t{}: {}: {:,.3f}, Mean: {:,.3f} {}".format(k, "Max" if type == 0 else "Min", np.max(v) if type == 0 else np.min(v), np.mean(v), len(v)))
         else:
             print("\t",k,"No files")
 
-def get_top(f):
+def get_top(f, type):
     fs = glob.glob(f)
     if not len(fs):
         return -1
-    
-    maxv = -1
+  
+    ind = 0 
+    if len(fs) > 1:
+        print(f,"has more than one")
+        for i, f in enumerate(fs):
+            from subprocess import call
+            import sys
+            print(i)
+            call(["ls", "-l", f])
 
-    with open(fs[0]) as ifh:
+        res = int(input("Do you want to remove 0, 1 or -1 (none)?\n"))
+        while res != 0 and res != 1 and res != -1:
+            res = int(input("Got "+str(res)+". Please Enter 0, 1 or -1\n"))
+
+        if res != -1:
+            fn = "/".join(fs[res].split("/")[:-1])
+            print(fn)
+            call(["/bin/rm", "-rf", fn])
+            ind = 1 - res
+ 
+    maxv = -1 if type == 0 else 1000
+
+    with open(fs[ind]) as ifh:
         for l in ifh:
             if l.find('dev loss:') != -1:
                 e = l.rstrip().split()
 
-                acc = float(e[-1][:-1])
+                if type == 0:
+                    acc = float(e[-1][:-1])
+                    if acc > maxv:
+                        maxv = acc
+                else:
+                    loss = float(e[-3])
+                    if loss < maxv:
+                        maxv = loss
 
-                if acc > maxv:
-                    maxv = acc
+
     return maxv
 
 

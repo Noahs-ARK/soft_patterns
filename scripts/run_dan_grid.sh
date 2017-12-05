@@ -57,14 +57,14 @@ for lr in ${ls[@]}; do
 				--vl $vl \
 				-m $local_d 	\
 				-l $lr \
-				-t $t \
+				-w $w \
 				-i 250 \
 				-b 150 \
 				-d $d \
 				-g -r \
 				-e $e"
 			echo $com
-			$com | tee $local_d/output.dat
+			export CUDA_VISIBLE_DEVICES=1 && $com | tee $local_d/output.dat
 		done
 	done
 done
