@@ -16,18 +16,18 @@ wdir=$HOME/work/soft_patterns/
 
 if [ $model -eq 1 ]; then
 	wdir=$wdir/baselines/dan_b150/$dataset/
-	s=''
+	s='/output.dat'
 elif [ $model -eq 2 ]; then
-	wdir=$wdir/baselines/lstm/$dataset/
-	s=''
+	wdir=$wdir/logs/
+	s="_${1}.out"
 else
-	s="_${1}_seed"
+	s="_${1}_seed*/output.dat"
 fi
 
 echo "Best dev:"
-grep loss: $wdir/*${s}*/output.dat | sort -rnk 18 | head -n1 | awk '{print $18}' 
-f=$(grep loss: $wdir/*${s}*/output.dat | sort -nk 16 | head -n 1 | cut -d: -f1)
-n=$(grep loss: $wdir/*${s}d*/output.dat | sort -nk 16 | head -n 1 | awk '{print $2}')
+grep loss: $wdir/*${s} | sort -rnk 18 | head -n1 | awk '{print $18}' 
+f=$(grep loss: $wdir/*${s} | sort -nk 16 | head -n 1 | cut -d: -f1)
+n=$(grep loss: $wdir/*${s} | sort -nk 16 | head -n 1 | awk '{print $2}')
 
 echo "Test: $f, $n"
 

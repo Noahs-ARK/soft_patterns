@@ -48,13 +48,15 @@ ind=($(seq 0 $n | sort -R))
 
 ind2=($(seq 0 $n))
 
-for i in {0..19}; do
+for i in {0..15}; do
 	ind2[${ind[$i]}]=1
 done
 
-for i in $(seq 20 $n); do
+for i in $(seq 16 $n); do
 	ind2[${ind[$i]}]=0
 done
+
+git_tag=$(git log | head -n1 | awk '{print $NF}'| cut -b -7)
 
 i=-1
 for lr in 0.01 0.005 0.001; do
@@ -62,7 +64,7 @@ for lr in 0.01 0.005 0.001; do
 		for d in 10 25 50 100; do
 		    for h in 100 200 300; do
 			let i++
-        	        s=lstm_l${lr}_t${t}_d${d}_h${h}_$dataset
+        	        s=lstm_l${lr}_t${t}_d${d}_h${h}_${dataset}_$git_tag
                 	local_d=$m/$s
 			if [ -d $local_d ]; then
 			    echo "$local_d found!"
