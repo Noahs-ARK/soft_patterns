@@ -11,7 +11,7 @@ from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
 from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
     LogSpaceMaxTimesSemiring, soft_pattern_arg_parser
-from util import chunked_sorted
+from util import chunked, decreasing_length
 
 SCORE_IDX = 0
 START_IDX_IDX = 1
@@ -34,6 +34,9 @@ def visualize_patterns(model,
                        dev_set=None,
                        dev_text=None,
                        k_best=5):
+    dev_sorted = decreasing_length(zip(dev_set, dev_text))
+    dev_set = [doc for doc, _ in dev_sorted]
+    dev_text = [text for _, text in dev_sorted]
     num_patterns = model.total_num_patterns
     pattern_length = model.max_pattern_length
 
@@ -69,18 +72,19 @@ def visualize_patterns(model,
 
         def span_text(doc_idx):
             score = scores[p, doc_idx, SCORE_IDX]
-            start_idx = int(scores[p, doc_idx][START_IDX_IDX])
+            start_idx = int(scores[p, doc_idx, START_IDX_IDX])
             end_idx = int(scores[p, doc_idx, END_IDX_IDX])
             return score, " ".join("{:<15}".format(s) for s in dev_text[doc_idx][start_idx:end_idx])
-
-        def transition_str(norm, neighb, bias):
-            return "{:5.2f} * {:<15} + {:5.2f}".format(norm, model.vocab[neighb], bias)
 
         print("Pattern:", p, "of length", p_len)
         print("Highest scoring spans:")
         for k, d in enumerate(k_best_doc_idxs):
             score, text = span_text(d)
-            print("{} {} {:2.3f}  {}".format(k, d, score, text.encode('utf-8')))
+            print("{} {:2.3f}  {}".format(k, score, text.encode('utf-8')))
+
+        def transition_str(norm, neighb, bias):
+            return "{:5.2f} * {:<15} + {:5.2f}".format(norm, model.vocab[neighb], bias)
+
         print("self-loops: ",
               ", ".join(
                   transition_str(norm, neighb, bias)
@@ -112,7 +116,8 @@ def get_top_scoring_sequences(self, semiring, dev_set, max_batch_size):
     eps_value = self.get_eps_value()
 
     delta = 0
-    for batch_idx, chunk in enumerate(chunked_sorted(dev_set, max_batch_size)):
+    # dev_set must already be sorted by decreasing length
+    for batch_idx, chunk in enumerate(chunked(dev_set, max_batch_size)):
         if batch_idx % debug_print == debug_print - 1:
             print(".", end="", flush=True)
 
@@ -155,7 +160,7 @@ def get_top_scoring_sequences(self, semiring, dev_set, max_batch_size):
                             max_scores[pattern_idx, abs_idx, SCORE_IDX] = score
                             max_scores[pattern_idx, abs_idx, START_IDX_IDX] = start_token_idx
                             max_scores[pattern_idx, abs_idx, END_IDX_IDX] = end_token_idx + 1
-        delta += batch.size()
+        delta += batch_size
 
     print()
     return max_scores

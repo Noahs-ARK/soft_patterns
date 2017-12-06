@@ -23,7 +23,7 @@ from tensorboardX import SummaryWriter
 
 from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP
-from util import chunked_sorted, identity
+from util import shuffled_chunked_sorted, identity, chunked_sorted
 
 CW_TOKEN = "CW"
 EPSILON = 1e-10
@@ -463,7 +463,7 @@ def train(train_data,
 
         loss = 0.0
         i = 0
-        for batch in chunked_sorted(train_data, batch_size):
+        for batch in shuffled_chunked_sorted(train_data, batch_size):
             batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu), word_dropout, max_len)
             gold = [x[1] for x in batch]
             loss += torch.sum(

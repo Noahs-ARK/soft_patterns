@@ -19,6 +19,7 @@ example usage:
 
 import argparse
 import sys; sys.path.append(".")
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from soft_patterns import train, to_cuda, training_arg_parser
 import numpy as np
 import os
@@ -79,17 +80,22 @@ class AveragingRnnClassifier(Module):
             torch.index_select(batch.embeddings_matrix, 1, doc).t()
             for doc in batch.docs
         ]
+        # Assumes/requires that `batch.docs` is sorted by decreasing doc length.
+        # This gets done in `chunked_sorted`.
+        packed = pack_padded_sequence(
+            torch.stack(docs_vectors, dim=1),
+            lengths=list(batch.doc_lens)
+        )
 
         # run the biLSTM
         starts = (
             self.start_hidden_state.expand(self.num_directions, b, self.hidden_dim).contiguous(),
             self.start_cell_state.expand(self.num_directions, b, self.hidden_dim).contiguous() 
         )
-        outs, _ = self.rnn(torch.stack(docs_vectors, dim=1), starts)
-
+        outs, _ = self.rnn(packed, starts)
+        padded, _ = pad_packed_sequence(outs)
         # average all the hidden states
-        # TODO: mask so hidden states past end of doc aren't considered
-        outs_sum = torch.sum(outs, dim=0)  # avg each doc
+        outs_sum = torch.sum(padded, dim=0)
         outs_avg = torch.div(
             outs_sum,
             Variable(batch.doc_lens.float().view(b, 1)).expand(b, self.num_directions * self.hidden_dim)

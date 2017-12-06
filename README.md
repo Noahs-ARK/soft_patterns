@@ -30,13 +30,13 @@ LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/Users/sam/anaconda3/pkgs/mkl-11.3.3-0/lib"
     --tl ${sst_dir}/train.labels \
     --vd ${sst_dir}/dev.data \
     --vl ${sst_dir}/dev.labels \
-    -p "5:50,4:50,3:50,2:50" \
+    -p "5:10,4:10,3:20,2:20" \
     --mlp_hidden_dim 10 \
-    --maxplus \
+    --maxtimes \
     --learning_rate 1e-3 \
     --dropout 0.1 \
     --scheduler \
-    --model_save_dir "${model_dir}/output_p5-50_4-50_3-50_2-50_d10_l1e-3_t0.2_r_b_6B.100d_slScale0_epsScale0_3d79c4f"
+    --model_save_dir "${model_dir}/output_p5-10_4-10_3-20_2-20_d1_l1e-3_t0.2_r_b_6B.100d_slScale0_epsScale0_3d79c4f"
 ```
 
 or
@@ -58,17 +58,17 @@ or
     -e "${wordvec_file}" \
     --vd "${sst_dir}/dev.data" \
     --vl "${sst_dir}/dev.labels" \
-    -p "5:50,4:50,3:50,2:50" \
+    -p "5:10,4:10,3:20,2:20" \
     -b 1000 \
-    --maxplus \
-    --input_model "${model_dir}/output_p5-50_4-50_3-50_2-50_d10_l1e-3_t0.2_r_b_6B.100d_slScale0_epsScale0_3d79c4f/model_69.pth"
+    --maxtimes \
+    --input_model "${model_dir}/output_p5-10_4-10_3-20_2-20_d1_l1e-3_t0.2_r_b_6B.100d_slScale0_epsScale0_3d79c4f/model_25.pth"
 ```
 
 or
 
 ```bash
 ./run_viz.sh \
-    "${model_dir}/output_p5-50_4-50_3-50_2-50_d10_l1e-3_t0.2_r_b_6B.100d_slScale0_epsScale0_3d79c4f"
+    "${model_dir}/output_p5-10_4-10_3-20_2-20_d1_l1e-3_t0.2_r_b_6B.100d_slScale0_epsScale0_3d79c4f"
 ```
 
 
