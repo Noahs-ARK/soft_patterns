@@ -34,19 +34,16 @@ def chunked(xs, chunk_size):
     ]
 
 
+def decreasing_length(xs):
+    return sorted(list(xs), key=lambda x: len(x[0]), reverse=True)
+
+
 def chunked_sorted(xs, chunk_size):
+    return chunked(decreasing_length(xs), chunk_size)
+
+
+def shuffled_chunked_sorted(xs, chunk_size):
     """ Splits a list into `chunk_size`-sized pieces. """
-    # print(xs[:3])
-    xs = list(xs)
-
-    xs = sorted(xs, key=lambda x: len(x[0]), reverse=True)
-    # print(xs[:3])
-
-    chunks = [
-        xs[i:i + chunk_size]
-        for i in range(0, len(xs), chunk_size)
-    ]
-
+    chunks = chunked_sorted(xs, chunk_size)
     np.random.shuffle(chunks)
-
     return chunks

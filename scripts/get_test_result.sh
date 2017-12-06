@@ -22,16 +22,16 @@ wdir=$HOME/work/soft_patterns/
 
 if [ $model -eq 1 ]; then
 	wdir=$wdir/baselines/dan_b150/$dataset/
-	s='.out'
+	s='/output.dat'
 elif [ $model -eq 2 ]; then
-	wdir=$wdir/baselines/lstm/$dataset/
-	s=''
+	wdir=$wdir/logs/
+	s="_${1}.out"
 else
 	s="_${1}_seed*/output.dat"
 fi
 
 l=$(ls $wdir/*${s} | wc -l | awk '{print $1}')
-echo "$l files found.i Latest:"
+echo "$l files found. Latest:"
 
 ls -ltr $wdir/*${s} | tail -n1 | cut -d' ' -f6-9
 

@@ -9,7 +9,7 @@ from data import read_labels
 from sklearn import linear_model
 from scipy.sparse import lil_matrix
 from soft_patterns import CW_TOKEN
-
+import pickle
 
 
 INDEX_TOKEN = "###INDEX###"
@@ -35,8 +35,12 @@ def main(args):
     with open(args.work_dir+"/dev.data", encoding='ISO-8859-1') as input_file:
         dev_docs = [line.rstrip().split() for line in input_file]
 
+    with open(args.work_dir+"/test.data", encoding='ISO-8859-1') as input_file:
+        test_docs = [line.rstrip().split() for line in input_file]
+
     train_labels = read_labels(args.work_dir+"/train.labels")
     dev_labels = read_labels(args.work_dir+"/dev.labels")
+    test_labels = read_labels(args.work_dir+"/test.labels")
 
     for doc in train_docs:
         add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, args.min_pattern_length)
@@ -66,12 +70,16 @@ def main(args):
 
     train_features = lil_matrix((len(train_docs), len(patterns)), dtype=np.int8)
     dev_features = lil_matrix((len(dev_docs), len(patterns)))
+    test_features = lil_matrix((len(test_docs), len(patterns)))
 
     for (i, doc) in enumerate(train_docs):
         add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, args.min_pattern_length, trie, train_features, i)
 
     for (i, doc) in enumerate(dev_docs):
         add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, args.min_pattern_length, trie, dev_features, i)
+
+    for (i, doc) in enumerate(test_docs):
+        add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, args.min_pattern_length, trie, test_features, i)
 
     # print([x.__str__() for x in patterns.keys()])
     # print("df",dev_features)
@@ -81,6 +89,14 @@ def main(args):
 
     gen_salient_patterns(train_features, clf, pattern_keys, args.n_salient_features)
 
+    if args.model_ofile is not None:
+        print("Saving best model to", args.model_ofile)
+        pickle.dump(clf, open(args.model_ofile, 'wb'))
+
+    test_predicted_labels = clf.predict(test_features)
+    test_acc = evaluate(test_predicted_labels, test_labels)
+
+    print("Test accuracy: {}".format(test_acc))
 
     return 0
 
@@ -378,12 +394,13 @@ if __name__ == '__main__':
     parser.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
     parser.add_argument("-d", "--work_dir", help="Work dir (where {train,dev}.{data,labels} are found", required=True)
     parser.add_argument("--fh", help="High frequency word minimal threshold", type=float, default=0.0001)
-    parser.add_argument("--fc", help="Content word maximal threshold", type=float, default=0.001)
-    parser.add_argument("-m", "--min_pattern_frequency", help="Minimal pattern frequency", type=float, default=0.005)
+    parser.add_argument("--fc", help="Content word maximal threshold", type=float, default=0.01)
+    parser.add_argument("-m", "--min_pattern_frequency", help="Minimal pattern frequency", type=float, default=0.001)
     parser.add_argument("-c", "--use_CW_tokens", help="Use CW tokens in pattern", action='store_true')
     parser.add_argument("-x", "--max_pattern_len", help="Maximum number of HFWs in pattern", type=int, default=6)
     parser.add_argument("-n", "--n_salient_features", help="Number of salient features to print", type=int, default=5)
     parser.add_argument("-i", "--min_pattern_length", help="Minimum number of HFWs in pattern", type=int, default=1)
+    parser.add_argument("-o", "--model_ofile", help="Model output file")
 
     main(parser.parse_args())
 
