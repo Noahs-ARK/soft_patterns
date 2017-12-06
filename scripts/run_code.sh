@@ -18,7 +18,10 @@ mtf=''
 mts=''
 glove_index=0
 gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
-dirs=(stanford_sentiment_binary amazon_reviews ROC_stories stanford_sentiment_binary_100 stanford_sentiment_binary_500 stanford_sentiment_binary_1000 stanford_sentiment_binary_2500)
+dirs=(stanford_sentiment_binary amazon_reviews ROC_stories stanford_sentiment_binary_100 stanford_sentiment_binary_500 stanford_sentiment_binary_1000 stanford_sentiment_binary_2500 amazon_reviews_100 amazon_reviews_500 amazon_reviews_1000 amazon_reviews_2500 amazon_reviews_5000 amazon_reviews_10000)
+
+n_dirs=${#dirs[@]}
+let n_dirs--
 datadir_index=0
 seed=100
 
@@ -47,7 +50,13 @@ if [ "$#" -lt 4 ]; then
 	 "<maxplus=$mp (1 for maxplus, 2 for maxtimes, 0 for prob)> <batch size=$b> <gradient clipping (optional)>" \
 	  "<gpu (optional)> <glove index=$glove_index (${gloves[@]})>" \
 	  "<file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases, 3 -- fine grained categories, 4 -- fine grained categories with phrases)>" \
-	   "<word_dropout=$w> <data dir: 0 -- stanford (default), 1 -- amazon, 2 -- ROC stories> <seed=$seed>"
+	   "<word_dropout=$w> <data dir: 0 -- stanford (default), 1 -- amazon, 2 -- ROC stories> <seed=$seed>"\
+
+	echo "Dirs:"
+        for i in $(seq 0 $n_dirs); do
+                echo ${i}: ${dirs[$i]}
+        done
+
 	exit -1
 elif [ "$#" -gt 4 ]; then
 	r=$5
