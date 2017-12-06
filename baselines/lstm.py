@@ -1,4 +1,4 @@
-#!/usr/bin/env python3 -u
+#!/usr/bin/env python -u
 """
 Text classification baseline model "DAN".
 
@@ -82,8 +82,8 @@ class AveragingRnnClassifier(Module):
 
         # run the biLSTM
         starts = (
-            self.start_hidden_state.expand(self.num_directions, b, self.hidden_dim),
-            self.start_cell_state.expand(self.num_directions, b, self.hidden_dim)
+            self.start_hidden_state.expand(self.num_directions, b, self.hidden_dim).contiguous(),
+            self.start_cell_state.expand(self.num_directions, b, self.hidden_dim).contiguous() 
         )
         outs, _ = self.rnn(torch.stack(docs_vectors, dim=1), starts)
 
