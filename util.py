@@ -33,12 +33,13 @@ def chunked(xs, chunk_size):
         for i in range(0, len(xs), chunk_size)
     ]
 
+
 def chunked_sorted(xs, chunk_size):
     """ Splits a list into `chunk_size`-sized pieces. """
     # print(xs[:3])
     xs = list(xs)
 
-    xs = sorted(xs, key=lambda x: len(x[0]))
+    xs = sorted(xs, key=lambda x: len(x[0]), reverse=True)
     # print(xs[:3])
 
     chunks = [
