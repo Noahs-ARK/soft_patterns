@@ -5,9 +5,12 @@ highest-scoring spans in the dev set.
 """
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
+from baselines.dan import DanClassifier
+from baselines.lstm import AveragingRnnClassifier
 import sys
 import torch
 import numpy as np
+from torch.nn import LSTM
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
 from soft_patterns import MaxPlusSemiring, LogSpaceMaxTimesSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring, training_arg_parser, \
     soft_pattern_arg_parser
@@ -21,9 +24,6 @@ END_IDX_IDX = 2
 def main(args):
     print(args)
 
-    pattern_specs = OrderedDict(sorted(([int(y) for y in x.split(":")] for x in args.patterns.split(",")),
-                                key=lambda t: t[0]))
-    max_pattern_length = max(list(pattern_specs.keys()))
     n = args.num_train_instances
     mlp_hidden_dim = args.mlp_hidden_dim
     num_mlp_layers = args.num_mlp_layers
@@ -47,12 +47,33 @@ def main(args):
     num_classes = len(set(dev_labels))
     print("num_classes:", num_classes)
 
-    semiring = \
-        MaxPlusSemiring if args.maxplus else (
-            LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
-        )
+    if args.dan:
+        model = DanClassifier(mlp_hidden_dim,
+                                  num_mlp_layers,
+                                  num_classes,
+                                  embeddings,
+                                  args.gpu)
+    elif args.bilstm:
+        cell_type = LSTM
 
-    model = SoftPatternClassifier(pattern_specs,
+        model = AveragingRnnClassifier(args.hidden_bilstm_dim,
+                                       mlp_hidden_dim,
+                                       num_mlp_layers,
+                                       num_classes,
+                                       embeddings,
+                                       cell_type=cell_type,
+                                       gpu=args.gpu,
+                                       dropout=0)
+    else:
+        pattern_specs = OrderedDict(sorted(([int(y) for y in x.split(":")] for x in args.patterns.split(",")),
+                                           key=lambda t: t[0]))
+
+        semiring = \
+            MaxPlusSemiring if args.maxplus else (
+                LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
+            )
+
+        model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
                                   num_mlp_layers,
                                   num_classes,
@@ -70,7 +91,7 @@ def main(args):
 
     test_acc = evaluate_accuracy(model, dev_data, args.batch_size, args.gpu)
 
-    print("Test accuray: {:>8,.3f}%".format(test_acc))
+    print("Test accuray: {:>8,.3f}%".format(100*test_acc))
 
     return 0
 
@@ -79,4 +100,8 @@ if __name__ == '__main__':
     parser = ArgumentParser(description=__doc__,
                             formatter_class=ArgumentDefaultsHelpFormatter,
                             parents=[soft_pattern_arg_parser(), training_arg_parser()])
+    parser.add_argument("--dan", help="Dan classifier", action='store_true')
+    parser.add_argument("--bilstm", help="BiLSTM classifier", action='store_true')
+    parser.add_argument("--hidden_bilstm_dim", help="BiLSTM number of hidden units", type=int, default=100)
+
     sys.exit(main(parser.parse_args()))
