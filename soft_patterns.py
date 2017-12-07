@@ -505,7 +505,7 @@ def train(train_data,
         print("\n")
 
         finish_iter_time = monotonic()
-        train_acc = evaluate_accuracy(model, train_data, batch_size, gpu)
+        train_acc = evaluate_accuracy(model, train_data[:1000], batch_size, gpu)
         dev_acc = evaluate_accuracy(model, dev_data, batch_size, gpu)
 
         print(
