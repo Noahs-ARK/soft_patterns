@@ -29,6 +29,7 @@ from torch.autograd import Variable
 from torch.nn import Module, LSTM
 from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP, mlp_arg_parser
+from util import to_cuda
 
 
 class AveragingRnnClassifier(Module):
@@ -56,6 +57,8 @@ class AveragingRnnClassifier(Module):
                 mlp_hidden_dim,
                 num_mlp_layers,
                 num_classes)
+
+        self.to_cuda = to_cuda(gpu)
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def forward(self, batch, debug=0, dropout=None):
