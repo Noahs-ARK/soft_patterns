@@ -22,7 +22,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tensorboardX import SummaryWriter
 
 from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
-from mlp import MLP
+from mlp import MLP, mlp_arg_parser
 from util import shuffled_chunked_sorted, identity, chunked_sorted
 
 CW_TOKEN = "CW"
@@ -661,25 +661,6 @@ def main(args):
     return 0
 
 
-def soft_pattern_arg_parser():
-    p = ArgumentParser(add_help=False)
-    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    p.add_argument("-p", "--patterns",
-                   help="Pattern lengths and numbers: a comma separated list of length:number pairs",
-                   default="5:50,4:50,3:50,2:50")
-    p.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
-    p.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
-    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
-    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    p.add_argument("--maxplus",
-                   help="Use max-plus semiring instead of plus-times",
-                   default=False, action='store_true')
-    p.add_argument("--maxtimes",
-                   help="Use max-times semiring instead of plus-times",
-                   default=False, action='store_true')
-    return p
-
-
 def read_patterns(ifile, pattern_specs):
     with open(ifile, encoding='utf-8') as ifh:
         pre_computed_patterns = [l.rstrip().split() for l in ifh if len(l.rstrip())]
@@ -695,7 +676,27 @@ def read_patterns(ifile, pattern_specs):
     return pre_computed_patterns
 
 
+def soft_pattern_arg_parser():
+    """ CLI args related to SoftPatternsClassifier """
+    p = ArgumentParser(add_help=False,
+                       parents=[mlp_arg_parser()])
+    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
+    p.add_argument("-p", "--patterns",
+                   help="Pattern lengths and numbers: a comma separated list of length:number pairs",
+                   default="5:50,4:50,3:50,2:50")
+    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
+    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
+    p.add_argument("--maxplus",
+                   help="Use max-plus semiring instead of plus-times",
+                   default=False, action='store_true')
+    p.add_argument("--maxtimes",
+                   help="Use max-times semiring instead of plus-times",
+                   default=False, action='store_true')
+    return p
+
+
 def training_arg_parser():
+    """ CLI args related to training models. """
     p = ArgumentParser(add_help=False)
     p.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
     p.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
@@ -709,8 +710,9 @@ def training_arg_parser():
     p.add_argument("--td", help="Train data file", required=True)
     p.add_argument("--tl", help="Train labels file", required=True)
     p.add_argument("--pre_computed_patterns", help="File containing pre-computed patterns")
-    p.add_argument("--max_doc_len", \
-                   help="Maximum doc length. For longer documents, spans of length max_doc_len will be randomly selected each iteration (-1 means no restriction)",
+    p.add_argument("--max_doc_len",
+                   help="Maximum doc length. For longer documents, spans of length max_doc_len will be randomly "
+                        "selected each iteration (-1 means no restriction)",
                    type=int, default=-1)
     p.add_argument("--vd", help="Validation data file", required=True)
     p.add_argument("--vl", help="Validation labels file", required=True)

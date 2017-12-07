@@ -23,7 +23,7 @@ import torch
 from torch.nn import Module
 
 from data import read_embeddings, read_docs, read_labels, vocab_from_text
-from mlp import MLP
+from mlp import MLP, mlp_arg_parser
 
 
 class DanClassifier(Module):
@@ -153,12 +153,11 @@ def main(args):
 
 
 def dan_arg_parser():
-    p = argparse.ArgumentParser(add_help=False)
+    p = argparse.ArgumentParser(add_help=False,
+                                parents=[mlp_arg_parser()])
     p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
     p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
     p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    p.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
-    p.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
     return p
 
 
