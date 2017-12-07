@@ -13,8 +13,7 @@ class Rnn(Module):
                  input_dim,
                  hidden_dim,
                  cell_type=LSTM,
-                 gpu=False,
-                 dropout=0.1):
+                 gpu=False):
         super(Rnn, self).__init__()
         self.hidden_dim = hidden_dim
         self.to_cuda = to_cuda(gpu)
@@ -23,8 +22,8 @@ class Rnn(Module):
         self.rnn = self.cell_type(input_size=self.input_dim,
                                   hidden_size=hidden_dim,
                                   num_layers=1,
-                                  dropout=dropout,
                                   bidirectional=True)
+
         self.num_directions = 2  # We're a *bi*LSTM
         self.start_hidden_state = \
             Parameter(self.to_cuda(
@@ -57,6 +56,7 @@ class Rnn(Module):
             self.start_cell_state.expand(self.num_directions, b, self.hidden_dim).contiguous()
         )
         outs, _ = self.rnn(packed, starts)
+
         return outs
 
 

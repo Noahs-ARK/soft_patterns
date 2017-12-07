@@ -43,16 +43,14 @@ class AveragingRnnClassifier(Module):
                  num_classes,
                  embeddings,
                  cell_type=LSTM,
-                 gpu=False,
-                 dropout=0.1):
+                 gpu=False):
         super(AveragingRnnClassifier, self).__init__()
         self.embeddings = embeddings
         self.rnn = \
             Rnn(len(embeddings[0]),
                 hidden_dim,
                 cell_type=cell_type,
-                gpu=gpu,
-                dropout=dropout)
+                gpu=gpu)
         self.mlp = \
             MLP(self.rnn.num_directions * self.rnn.hidden_dim,
                 mlp_hidden_dim,
@@ -70,6 +68,9 @@ class AveragingRnnClassifier(Module):
                                 debug=debug,
                                 dropout=dropout)
         padded, _ = pad_packed_sequence(outs)
+
+        if dropout is not None:
+            padded = dropout(padded)
         # average all the hidden states
         outs_sum = torch.sum(padded, dim=0)
         outs_avg = torch.div(
@@ -137,8 +138,7 @@ def main(args):
                                    num_classes,
                                    embeddings,
                                    cell_type=cell_type,
-                                   gpu=args.gpu,
-                                   dropout=dropout)
+                                   gpu=args.gpu)
 
     if args.gpu:
         model.to_cuda(model)

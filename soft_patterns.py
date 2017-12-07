@@ -198,10 +198,16 @@ class SoftPatternClassifier(Module):
             outs = self.rnn.forward(batch, dropout=dropout)
             padded, _ = pad_packed_sequence(outs, batch_first=True)
             padded = padded.contiguous().view(b * n, self.word_dim).t()
+
+            if dropout is not None and dropout:
+                padded = dropout(padded)
+
             batched_transition_scores = \
                 self.semiring.from_float(mm(self.diags, padded) + self.bias).t()
-            # if dropout is not None and dropout:
-            #     batched_transition_scores = dropout(batched_transition_scores)
+
+            if dropout is not None and dropout:
+                batched_transition_scores = dropout(batched_transition_scores)
+
             batched_transition_scores = \
                 batched_transition_scores.contiguous().view(
                     b,
@@ -627,8 +633,7 @@ def main(args):
         rnn = Rnn(word_dim,
                   args.hidden_dim,
                   cell_type=LSTM,
-                  gpu=args.gpu,
-                  dropout=args.dropout)
+                  gpu=args.gpu)
     else:
         rnn = None
 
