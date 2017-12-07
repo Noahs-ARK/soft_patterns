@@ -25,7 +25,7 @@ if [ $model -eq 1 ]; then
 	s='/output.dat'
 elif [ $model -eq 2 ]; then
 	wdir=$wdir/logs/
-	s="_${1}.out"
+	s="_${1}[\._]*out"
 else
 	s="_${1}_seed*/output.dat"
 fi
