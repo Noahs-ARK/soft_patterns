@@ -197,7 +197,7 @@ class SoftPatternClassifier(Module):
             # run an RNN to get the word vectors to input into our soft-patterns
             outs = self.rnn.forward(batch, dropout=dropout)
             padded, _ = pad_packed_sequence(outs, batch_first=True)
-            padded = padded.view(b * n, self.word_dim).t()
+            padded = padded.contiguous().view(b * n, self.word_dim).t()
             batched_transition_scores = \
                 self.semiring.from_float(mm(self.diags, padded) + self.bias).t()
             # if dropout is not None and dropout:
