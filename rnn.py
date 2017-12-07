@@ -2,7 +2,7 @@ import argparse
 
 import torch
 from torch.nn import Parameter, Module, LSTM
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+from torch.nn.utils.rnn import pack_padded_sequence
 
 from util import to_cuda
 
