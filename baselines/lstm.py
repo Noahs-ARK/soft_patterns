@@ -30,21 +30,15 @@ from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP, mlp_arg_parser
 
 
-class AveragingRnnClassifier(Module):
-    """
-    A text classification model that runs a biLSTM (or biGRU) over a document,
-    averages the hidden states, then feeds that into an MLP.
-    """
+class Rnn(Module):
+    """ A BiLSTM or BiGRU """
     def __init__(self,
                  hidden_dim,
-                 mlp_hidden_dim,
-                 num_mlp_layers,
-                 num_classes,
                  embeddings,
                  cell_type=LSTM,
                  gpu=False,
                  dropout=0.1):
-        super(AveragingRnnClassifier, self).__init__()
+        super(Rnn, self).__init__()
         self.hidden_dim = hidden_dim
         self.to_cuda = to_cuda(gpu)
         self.embeddings = embeddings
@@ -64,13 +58,8 @@ class AveragingRnnClassifier(Module):
             Parameter(self.to_cuda(
                 torch.randn(self.num_directions, 1, self.hidden_dim)
             ))
-        self.mlp = MLP(self.num_directions * self.hidden_dim,
-                       mlp_hidden_dim,
-                       num_mlp_layers,
-                       num_classes)
-        print("# params:", sum(p.nelement() for p in self.parameters()))
 
-    def forward(self, batch, debug=0, dropout=None):
+    def forward(self, batch, debug=False, dropout=None):
         """
         Run a biLSTM over the batch of docs, average the hidden states, and
         feed into an MLP.
@@ -90,16 +79,55 @@ class AveragingRnnClassifier(Module):
         # run the biLSTM
         starts = (
             self.start_hidden_state.expand(self.num_directions, b, self.hidden_dim).contiguous(),
-            self.start_cell_state.expand(self.num_directions, b, self.hidden_dim).contiguous() 
+            self.start_cell_state.expand(self.num_directions, b, self.hidden_dim).contiguous()
         )
         outs, _ = self.rnn(packed, starts)
         padded, _ = pad_packed_sequence(outs)
         # average all the hidden states
         outs_sum = torch.sum(padded, dim=0)
-        outs_avg = torch.div(
+        return torch.div(
             outs_sum,
             Variable(batch.doc_lens.float().view(b, 1)).expand(b, self.num_directions * self.hidden_dim)
         )
+
+
+class AveragingRnnClassifier(Module):
+    """
+    A text classification model that runs a biLSTM (or biGRU) over a document,
+    averages the hidden states, then feeds that into an MLP.
+    """
+    def __init__(self,
+                 hidden_dim,
+                 mlp_hidden_dim,
+                 num_mlp_layers,
+                 num_classes,
+                 embeddings,
+                 cell_type=LSTM,
+                 gpu=False,
+                 dropout=0.1):
+        super(AveragingRnnClassifier, self).__init__()
+        self.embeddings = embeddings
+        self.rnn = \
+            Rnn(hidden_dim,
+                embeddings,
+                cell_type=cell_type,
+                gpu=gpu,
+                dropout=dropout)
+        self.mlp = \
+            MLP(self.rnn.num_directions * self.rnn.hidden_dim,
+                mlp_hidden_dim,
+                num_mlp_layers,
+                num_classes)
+        print("# params:", sum(p.nelement() for p in self.parameters()))
+
+    def forward(self, batch, debug=0, dropout=None):
+        """
+        Run a biLSTM over the batch of docs, average the hidden states, and
+        feed into an MLP.
+        """
+        outs_avg = self.rnn.forward(batch,
+                                    debug=debug,
+                                    dropout=dropout)
         return self.mlp.forward(outs_avg)
 
     def predict(self, batch, debug=0):
