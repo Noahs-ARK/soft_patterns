@@ -25,6 +25,9 @@ let n_dirs--
 datadir_index=0
 seed=100
 
+bilstm=0
+bilstms=''
+
 
 if [ -z ${WORK+x} ]; then
     WORK=$HOME/
@@ -50,7 +53,7 @@ if [ "$#" -lt 4 ]; then
 	 "<maxplus=$mp (1 for maxplus, 2 for maxtimes, 0 for prob)> <batch size=$b> <gradient clipping (optional)>" \
 	  "<gpu (optional)> <glove index=$glove_index (${gloves[@]})>" \
 	  "<file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases, 3 -- fine grained categories, 4 -- fine grained categories with phrases)>" \
-	   "<word_dropout=$w> <data dir: 0 -- stanford (default), 1 -- amazon, 2 -- ROC stories> <seed=$seed>"\
+	   "<word_dropout=$w> <data dir: 0 -- stanford (default), 1 -- amazon, 2 -- ROC stories> <seed=$seed> <bilstm=$bilstm>"\
 
 	echo "Dirs:"
         for i in $(seq 0 $n_dirs); do
@@ -103,6 +106,13 @@ elif [ "$#" -gt 4 ]; then
 				                                    datadir_index=${13}
                                					    if [ "$#" -gt 13 ]; then
 				                                        seed=${14}
+                                                        if [ "$#" -gt 14 ]; then
+                                                            bilstm=${15}
+
+                                                            if [ $bilstm -gt 0 ]; then
+                                                                bilstms="--use_rnn --hidden_dim $bilstm"
+                                                            fi
+                                                        fi
                                 				    fi
                                 				fi
                                 				w=${12}
@@ -115,6 +125,7 @@ elif [ "$#" -gt 4 ]; then
 	fi
 fi
 
+
 p=$1
 
 p2=`echo ${p} | tr ',' '_' | tr ':' '-'`
@@ -126,7 +137,7 @@ glove=${gloves[$glove_index]}
 
 git_tag=$(git log | head -1 | awk '{print $2}' | cut -b-7)
 
-s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_w${w}_${dirs[$datadir_index]}_seed${seed}_${git_tag}
+s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_w${w}_${dirs[$datadir_index]}_seed${seed}_bh${bilstm}${git_tag}
 odir=${model_dir}/output_${s}
 
 data_dir="${resource_dir}/text_cat/${dirs[$datadir_index]}"
@@ -149,6 +160,7 @@ com="python -u soft_patterns.py        \
          -p $p \
         -t $t \
         -d $dim \
+        $bilstms \
         -l $lr $rf $mpf $clip $gpu\
         -b $b \
 	--max_doc_len 100 \

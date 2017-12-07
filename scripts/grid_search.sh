@@ -24,10 +24,10 @@ ls=(0.01 0.05 0.01 0.005)
 ws=(0 0.05 0.1 0.15)
 #ws=(0 0.05 0.1)
 #ts=(0 0.05 0.1)
-ts=(0 0.05 0.1)
+ts=(0 0.05 0.1 0.2 0.3)
 ds=(0 10 25 50)
 n=$(echo "${#ps[@]} * ${#ls[@]} * ${#ts[@]} * ${#ds[@]} * ${#ws[@]}" | bc -l)
-
+hs=(100 200 300)
 echo $n
 ind=($(seq 0 $n | sort -R))
 
@@ -49,24 +49,26 @@ for p in ${ps[@]}; do
                 for t in ${ts[@]}; do
                         for d in ${ds[@]}; do
                         	for w in ${ws[@]}; do
-					let i++
-					p2=$(echo ${p} | tr ',' '_' | tr ':' '-')
-                	                s=$HOME/work/soft_patterns/output_p${p2}_d${d}_l${l}_t${t}_r_mt_b150_clip0_840B.300d_w${w}_${dir}_seed${2}
+                            	for h in ${hs[@]}; do
+				                	let i++
+					                p2=$(echo ${p} | tr ',' '_' | tr ':' '-')
+                	                s=$HOME/work/soft_patterns/output_p${p2}_d${d}_l${l}_t${t}_r_mt_b150_clip0_840B.300d_w${w}_${dir}_seed${2}_bh$h
 	
-					if [ ${ind2[$i]} -eq 0 ]; then
-					    echo $i randomed out
-					    continue
-					fi 
+                                    if [ ${ind2[$i]} -eq 0 ]; then
+                                        echo $i randomed out
+                                        continue
+                                    fi
 
-#					ls ${s}*/output.dat
-					v=$(ls ${s}*/output.dat |& grep 'No such file' | wc -l)
+                #					ls ${s}*/output.dat
+                                    v=$(ls ${s}*/output.dat |& grep 'No such file' | wc -l)
 
-					if [ $v -gt 0 ]; then
-#						echo run
-#						exit -1
-						export CUDA_VISIBLE_DEVICES=$3 && ./scripts/run_code.sh $p $d $l $t 1 2 150  0 1 2 0 $w $1 $2
-					fi
-				done
+                                    if [ $v -gt 0 ]; then
+                #						echo run
+                #						exit -1
+                                        export CUDA_VISIBLE_DEVICES=$3 && ./scripts/run_code.sh $p $d $l $t 1 2 150  0 1 2 0 $w $1 $2 $h
+                                    fi
+			                	done
+			                done
                         done
                 done
         done
