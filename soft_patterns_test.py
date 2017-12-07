@@ -74,7 +74,7 @@ def main(args):
             )
 
         model = SoftPatternClassifier(pattern_specs, mlp_hidden_dim, num_mlp_layers, num_classes, embeddings, vocab,
-                                      semiring, pre_computed_patterns, args.gpu)
+                                      semiring, args.gpu)
 
     if args.gpu:
         model.to_cuda(model)

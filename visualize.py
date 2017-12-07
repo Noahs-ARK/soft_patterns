@@ -197,8 +197,17 @@ def main(args):
             LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
         )
 
+    if args.use_rnn:
+        rnn = Rnn(word_dim,
+                  args.hidden_dim,
+                  cell_type=LSTM,
+                  gpu=args.gpu,
+                  dropout=args.dropout)
+    else:
+        rnn = None
+
     model = SoftPatternClassifier(pattern_specs, mlp_hidden_dim, num_mlp_layers, num_classes, embeddings, vocab,
-                                  semiring, pre_computed_patterns, args.gpu, pre_computed_patterns=None)
+                                  semiring, args.gpu, rnn=rnn, pre_computed_patterns=None)
 
     if args.gpu:
         model.to_cuda(model)
