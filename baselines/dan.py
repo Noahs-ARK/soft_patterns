@@ -16,7 +16,8 @@ example usage:
 """
 import argparse
 import sys; sys.path.append(".")
-from soft_patterns import train, to_cuda, training_arg_parser
+from soft_patterns import train, training_arg_parser
+from util import to_cuda
 import numpy as np
 import os
 import torch

@@ -18,77 +18,20 @@ example usage:
 """
 
 import argparse
-import sys; sys.path.append(".")
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from soft_patterns import train, to_cuda, training_arg_parser
+import sys;
+
+from torch.nn.utils.rnn import pad_packed_sequence
+
+sys.path.append(".")
+from rnn import lstm_arg_parser, Rnn
+from soft_patterns import train, training_arg_parser
 import numpy as np
 import os
 import torch
 from torch.autograd import Variable
-from torch.nn import Module, LSTM, Parameter
+from torch.nn import Module, LSTM
 from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP, mlp_arg_parser
-
-
-class Rnn(Module):
-    """ A BiLSTM or BiGRU """
-    def __init__(self,
-                 hidden_dim,
-                 embeddings,
-                 cell_type=LSTM,
-                 gpu=False,
-                 dropout=0.1):
-        super(Rnn, self).__init__()
-        self.hidden_dim = hidden_dim
-        self.to_cuda = to_cuda(gpu)
-        self.embeddings = embeddings
-        self.word_dim = len(embeddings[0])
-        self.cell_type = cell_type
-        self.rnn = self.cell_type(input_size=self.word_dim,
-                                  hidden_size=hidden_dim,
-                                  num_layers=1,
-                                  dropout=dropout,
-                                  bidirectional=True)
-        self.num_directions = 2  # We're a *bi*LSTM
-        self.start_hidden_state = \
-            Parameter(self.to_cuda(
-                torch.randn(self.num_directions, 1, self.hidden_dim)
-            ))
-        self.start_cell_state = \
-            Parameter(self.to_cuda(
-                torch.randn(self.num_directions, 1, self.hidden_dim)
-            ))
-
-    def forward(self, batch, debug=False, dropout=None):
-        """
-        Run a biLSTM over the batch of docs, average the hidden states, and
-        feed into an MLP.
-        """
-        b = len(batch.docs)
-        docs_vectors = [
-            torch.index_select(batch.embeddings_matrix, 1, doc).t()
-            for doc in batch.docs
-        ]
-        # Assumes/requires that `batch.docs` is sorted by decreasing doc length.
-        # This gets done in `chunked_sorted`.
-        packed = pack_padded_sequence(
-            torch.stack(docs_vectors, dim=1),
-            lengths=list(batch.doc_lens)
-        )
-
-        # run the biLSTM
-        starts = (
-            self.start_hidden_state.expand(self.num_directions, b, self.hidden_dim).contiguous(),
-            self.start_cell_state.expand(self.num_directions, b, self.hidden_dim).contiguous()
-        )
-        outs, _ = self.rnn(packed, starts)
-        padded, _ = pad_packed_sequence(outs)
-        # average all the hidden states
-        outs_sum = torch.sum(padded, dim=0)
-        return torch.div(
-            outs_sum,
-            Variable(batch.doc_lens.float().view(b, 1)).expand(b, self.num_directions * self.hidden_dim)
-        )
 
 
 class AveragingRnnClassifier(Module):
@@ -108,8 +51,8 @@ class AveragingRnnClassifier(Module):
         super(AveragingRnnClassifier, self).__init__()
         self.embeddings = embeddings
         self.rnn = \
-            Rnn(hidden_dim,
-                embeddings,
+            Rnn(len(embeddings[0]),
+                hidden_dim,
                 cell_type=cell_type,
                 gpu=gpu,
                 dropout=dropout)
@@ -125,9 +68,17 @@ class AveragingRnnClassifier(Module):
         Run a biLSTM over the batch of docs, average the hidden states, and
         feed into an MLP.
         """
-        outs_avg = self.rnn.forward(batch,
-                                    debug=debug,
-                                    dropout=dropout)
+        b = len(batch.docs)
+        outs = self.rnn.forward(batch,
+                                debug=debug,
+                                dropout=dropout)
+        padded, _ = pad_packed_sequence(outs)
+        # average all the hidden states
+        outs_sum = torch.sum(padded, dim=0)
+        outs_avg = torch.div(
+            outs_sum,
+            Variable(batch.doc_lens.float().view(b, 1)).expand(b, self.num_directions * self.hidden_dim)
+        )
         return self.mlp.forward(outs_avg)
 
     def predict(self, batch, debug=0):
@@ -227,20 +178,9 @@ def main(args):
           patience=args.patience)
 
 
-def lstm_arg_parser():
-    p = argparse.ArgumentParser(add_help=False,
-                                parents=[mlp_arg_parser()])
-    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
-    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    p.add_argument("--hidden_dim", help="RNN hidden dimension", type=int, default=100)
-    # p.add_argument("--gru", help="Use GRU cells instead of LSTM cells", action='store_true')
-    return p
-
-
 if __name__ == '__main__':
     parser = \
         argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                parents=[lstm_arg_parser(), training_arg_parser()])
+                                parents=[lstm_arg_parser(), mlp_arg_parser(), training_arg_parser()])
     main(parser.parse_args())

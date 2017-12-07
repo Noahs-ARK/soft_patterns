@@ -14,23 +14,21 @@ import os
 import torch
 from torch import FloatTensor, LongTensor, cat, mm, norm, randn, zeros, ones
 from torch.autograd import Variable
-from torch.nn import Module, Parameter, NLLLoss
+from torch.nn import Module, Parameter, NLLLoss, LSTM
 from torch.nn.functional import sigmoid, log_softmax
+from torch.nn.utils.rnn import pad_packed_sequence
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from tensorboardX import SummaryWriter
 
+from rnn import lstm_arg_parser, Rnn
 from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP, mlp_arg_parser
-from util import shuffled_chunked_sorted, identity, chunked_sorted
+from util import shuffled_chunked_sorted, identity, chunked_sorted, to_cuda
 
 CW_TOKEN = "CW"
 EPSILON = 1e-10
-
-
-def to_cuda(gpu):
-    return (lambda v: v.cuda()) if gpu else identity
 
 
 def fixed_var(tensor):
@@ -119,7 +117,6 @@ class SoftPatternClassifier(Module):
     A text classification model that feeds the document scores from a bunch of
     soft patterns into an MLP
     """
-
     def __init__(self,
                  pattern_specs,
                  mlp_hidden_dim,
@@ -129,6 +126,7 @@ class SoftPatternClassifier(Module):
                  vocab,
                  semiring,
                  gpu=False,
+                 rnn=None,
                  pre_computed_patterns=None):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
@@ -139,10 +137,13 @@ class SoftPatternClassifier(Module):
 
         self.total_num_patterns = sum(pattern_specs.values())
         print(self.total_num_patterns, pattern_specs)
-
+        self.rnn = rnn
         self.mlp = MLP(self.total_num_patterns, mlp_hidden_dim, num_mlp_layers, num_classes)
 
-        self.word_dim = len(embeddings[0])
+        if self.rnn is None:
+            self.word_dim = len(embeddings[0])
+        else:
+            self.word_dim = self.rnn.num_directions * self.rnn.hidden_dim
         self.num_diags = 2  # self-loops and single-forward-steps
         self.pattern_specs = pattern_specs
         self.max_pattern_length = max(list(pattern_specs.keys()))
@@ -180,25 +181,40 @@ class SoftPatternClassifier(Module):
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
     def get_transition_matrices(self, batch, dropout=None):
-        transition_scores = \
-            self.semiring.from_float(mm(self.diags, batch.embeddings_matrix) + self.bias).t()
-
-        if dropout is not None and dropout:
-            transition_scores = dropout(transition_scores)
-
-        batched_transition_scores = [
-            torch.index_select(transition_scores, 0, doc) for doc in batch.docs
-        ]
-
-        batched_transition_scores = torch.cat(batched_transition_scores).view(
-            batch.size(), batch.max_doc_len, self.total_num_patterns, self.num_diags, self.max_pattern_length)
-
-        # transition matrix for each document in batch
+        b = batch.size()
+        n = batch.max_doc_len
+        if self.rnn is None:
+            transition_scores = \
+                self.semiring.from_float(mm(self.diags, batch.embeddings_matrix) + self.bias).t()
+            if dropout is not None and dropout:
+                transition_scores = dropout(transition_scores)
+            batched_transition_scores = [
+                torch.index_select(transition_scores, 0, doc) for doc in batch.docs
+            ]
+            batched_transition_scores = torch.cat(batched_transition_scores).view(
+                b, n, self.total_num_patterns, self.num_diags, self.max_pattern_length)
+        else:
+            # run an RNN to get the word vectors to input into our soft-patterns
+            outs = self.rnn.forward(batch, dropout=dropout)
+            padded, _ = pad_packed_sequence(outs, batch_first=True)
+            padded = padded.view(b * n, self.word_dim).t()
+            batched_transition_scores = \
+                self.semiring.from_float(mm(self.diags, padded) + self.bias).t()
+            # if dropout is not None and dropout:
+            #     batched_transition_scores = dropout(batched_transition_scores)
+            batched_transition_scores = \
+                batched_transition_scores.contiguous().view(
+                    b,
+                    n,
+                    self.total_num_patterns,
+                    self.num_diags,
+                    self.max_pattern_length
+                )
+        # transition matrix for each token idx
         transition_matrices = [
             batched_transition_scores[:, word_index, :, :, :]
-            for word_index in range(batch.max_doc_len)
+            for word_index in range(n)
         ]
-
         return transition_matrices
 
     def load_pre_computed_patterns(self, pre_computed_patterns, diag_data, bias_data, pattern_spec):
@@ -607,6 +623,15 @@ def main(args):
         train_data = train_data[:n]
         dev_data = dev_data[:n]
 
+    if args.use_rnn:
+        rnn = Rnn(word_dim,
+                  args.hidden_dim,
+                  cell_type=LSTM,
+                  gpu=args.gpu,
+                  dropout=args.dropout)
+    else:
+        rnn = None
+
     semiring = \
         MaxPlusSemiring if args.maxplus else (
             LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
@@ -620,6 +645,7 @@ def main(args):
                                   vocab,
                                   semiring,
                                   args.gpu,
+                                  rnn,
                                   pre_computed_patterns)
 
     if args.gpu:
@@ -679,7 +705,8 @@ def read_patterns(ifile, pattern_specs):
 def soft_pattern_arg_parser():
     """ CLI args related to SoftPatternsClassifier """
     p = ArgumentParser(add_help=False,
-                       parents=[mlp_arg_parser()])
+                       parents=[lstm_arg_parser(), mlp_arg_parser()])
+    p.add_argument("-u", "--use_rnn", help="Use an RNN underneath soft-patterns", action="store_true")
     p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
     p.add_argument("-p", "--patterns",
                    help="Pattern lengths and numbers: a comma separated list of length:number pairs",

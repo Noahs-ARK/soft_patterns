@@ -197,15 +197,8 @@ def main(args):
             LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
         )
 
-    model = SoftPatternClassifier(pattern_specs,
-                                  mlp_hidden_dim,
-                                  num_mlp_layers,
-                                  num_classes,
-                                  embeddings,
-                                  vocab,
-                                  semiring,
-                                  args.gpu,
-                                  None)
+    model = SoftPatternClassifier(pattern_specs, mlp_hidden_dim, num_mlp_layers, num_classes, embeddings, vocab,
+                                  semiring, pre_computed_patterns, args.gpu, pre_computed_patterns=None)
 
     if args.gpu:
         model.to_cuda(model)

@@ -47,3 +47,7 @@ def shuffled_chunked_sorted(xs, chunk_size):
     chunks = chunked_sorted(xs, chunk_size)
     np.random.shuffle(chunks)
     return chunks
+
+
+def to_cuda(gpu):
+    return (lambda v: v.cuda()) if gpu else identity

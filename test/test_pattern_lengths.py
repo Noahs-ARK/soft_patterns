@@ -8,7 +8,8 @@ from torch import cat, mm, FloatTensor
 from torch.autograd import Variable
 import soft_patterns
 from data import read_embeddings, read_docs, Vocab
-from soft_patterns import fixed_var, SoftPatternClassifier, to_cuda
+from soft_patterns import fixed_var, SoftPatternClassifier
+from util import to_cuda
 from test.settings import EMBEDDINGS_FILENAME, DATA_FILENAME, MODEL_FILENAME, PATTERN_SPECS, MLP_HIDDEN_DIM, \
     NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU
 
@@ -132,16 +133,8 @@ class TestPatternLengths(unittest.TestCase):
         self.data = read_docs(DATA_FILENAME, vocab, 0)[0]
         state_dict = torch.load(MODEL_FILENAME)
         self.model = \
-            SoftPatternClassifier(
-                PATTERN_SPECS,
-                MLP_HIDDEN_DIM,
-                NUM_MLP_LAYERS,
-                NUM_CLASSES,
-                embeddings,
-                vocab,
-                SEMIRING,
-                GPU
-            )
+            SoftPatternClassifier(PATTERN_SPECS, MLP_HIDDEN_DIM, NUM_MLP_LAYERS, NUM_CLASSES, embeddings, vocab,
+                                  SEMIRING, pre_computed_patterns, GPU)
         self.model.load_state_dict(state_dict)
 
     def test_pattern_lengths(self):

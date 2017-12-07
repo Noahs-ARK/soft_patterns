@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-from soft_patterns import Batch, SoftPatternClassifier, read_docs, read_embeddings, to_cuda
+from soft_patterns import Batch, SoftPatternClassifier, read_docs, read_embeddings
+from util import to_cuda
 import unittest
 import numpy as np
 import torch
@@ -21,16 +22,8 @@ class TestBatching(unittest.TestCase):
         self.data = read_docs(DATA_FILENAME, vocab, 0)[0]
         state_dict = torch.load(MODEL_FILENAME)
         self.model = \
-            SoftPatternClassifier(
-                PATTERN_SPECS,
-                MLP_HIDDEN_DIM,
-                NUM_MLP_LAYERS,
-                NUM_CLASSES,
-                embeddings,
-                vocab,
-                SEMIRING,
-                GPU
-            )
+            SoftPatternClassifier(PATTERN_SPECS, MLP_HIDDEN_DIM, NUM_MLP_LAYERS, NUM_CLASSES, embeddings, vocab,
+                                  SEMIRING, pre_computed_patterns, GPU)
         self.model.load_state_dict(state_dict)
         self.batch_sizes = [1, 2, 4, 5, 10, 20]
 
