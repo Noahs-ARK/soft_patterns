@@ -62,8 +62,7 @@ def main(args):
                                        num_classes,
                                        embeddings,
                                        cell_type=cell_type,
-                                       gpu=args.gpu,
-                                       dropout=0)
+                                       gpu=args.gpu)
     else:
         pattern_specs = OrderedDict(sorted(([int(y) for y in x.split(":")] for x in args.patterns.split(",")),
                                            key=lambda t: t[0]))
