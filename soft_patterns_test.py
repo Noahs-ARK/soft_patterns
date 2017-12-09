@@ -14,6 +14,7 @@ from torch.nn import LSTM
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
 from soft_patterns import MaxPlusSemiring, LogSpaceMaxTimesSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring, training_arg_parser, \
     soft_pattern_arg_parser
+from rnn import lstm_arg_parser, Rnn
 
 SCORE_IDX = 0
 START_IDX_IDX = 1
@@ -56,7 +57,7 @@ def main(args):
     elif args.bilstm:
         cell_type = LSTM
 
-        model = AveragingRnnClassifier(args.hidden_bilstm_dim,
+        model = AveragingRnnClassifier(args.hidden_dim,
                                        mlp_hidden_dim,
                                        num_mlp_layers,
                                        num_classes,
@@ -72,8 +73,16 @@ def main(args):
                 LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
             )
 
+        if args.use_rnn:
+            rnn = Rnn(word_dim,
+                  args.hidden_dim,
+                  cell_type=LSTM,
+                  gpu=args.gpu)
+        else:
+            rnn = None
+
         model = SoftPatternClassifier(pattern_specs, mlp_hidden_dim, num_mlp_layers, num_classes, embeddings, vocab,
-                                      semiring, args.gpu)
+                                      semiring, args.gpu, rnn)
 
     if args.gpu:
         model.to_cuda(model)
@@ -95,6 +104,5 @@ if __name__ == '__main__':
                             parents=[soft_pattern_arg_parser(), training_arg_parser()])
     parser.add_argument("--dan", help="Dan classifier", action='store_true')
     parser.add_argument("--bilstm", help="BiLSTM classifier", action='store_true')
-    parser.add_argument("--hidden_bilstm_dim", help="BiLSTM number of hidden units", type=int, default=100)
 
     sys.exit(main(parser.parse_args()))

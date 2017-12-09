@@ -20,7 +20,14 @@ function get_param {
     local name=$2
 
     val=$(head -1 ${f} | tr ' ' '\n' | grep -E "\b${name}=" | cut -d '=' -f2 | tr -d "'()" | sed 's/,$//')
-    echo ${val}
+
+    if [ $val == 'True' ]; then
+	echo "--$name"
+    elif [ $val == 'False' ]; then 
+	echo ""
+    else
+	echo ${val}
+    fi
 }
 
 model_dir=$(get_param $f model_save_dir)
@@ -45,34 +52,19 @@ gpu=$(get_param ${f} gpu)
 seed=$(get_param ${f} seed)
 mlp_hidden_dim=$(get_param ${f} mlp_hidden_dim)
 num_mlp_layers=$(get_param ${f} num_mlp_layers)
-
-if [ "${gpu}" == 'True' ]; then
-    gpu='--gpu'
-else
-    gpu=''
-fi
+hidden_dim=$(get_param ${f} hidden_dim)
 
 if [ $model -eq 0 ]; then
     maxplus=$(get_param ${f} maxplus)
-
-    if [ "${maxplus}" == 'True' ]; then
-        maxplus="--maxplus"
-    else
-        maxtimes=$(get_param ${f} maxtimes)
-        if [ "${maxtimes}" == 'True' ]; then
-            maxplus="--maxtimes"
-        else
-            maxplus=''
-        fi
-    fi
+    maxtimes=$(get_param ${f} maxtimes)
     patterns=$(get_param ${f} patterns)
+    rnn=$(get_param ${f} use_rnn)
 
     s="-p $patterns $maxplus"
 elif [ $model -eq 1 ]; then
     s="--dan"
 elif [ $model -eq 2 ]; then
-    lstm_hidden=$(get_param ${f} hidden_dim)
-    s="--bilstm --hidden_bilstm_dim $lstm_hidden"
+    s="--bilstm"
 else
     echo "Model not found (should be 0, 1 or 2. Got $model"
     exit -3
@@ -89,6 +81,8 @@ com="python -u soft_patterns_test.py  \
     --seed $seed \
     -b 150 $gpu \
     $s \
+    $rnn \
+    --hidden_dim $hidden_dim \
     --num_mlp_layers ${num_mlp_layers} \
     --input_model ${model_dir}/model_${model_num}.pth"
 
