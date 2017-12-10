@@ -41,7 +41,8 @@ def main(args):
     ds = dict()
     ss = dict()
     ws = dict()
-    reg = re.compile("output_p(.*)_d([0-9]+)_l([0-9\.]+)_t([0-9\.]+)_r_mt_b150_clip0_840B\.300d_w([0-9\.]+)_"+dataset+'_seed(\d+)_\w+')
+    bs = dict()
+    reg = re.compile("output_p(.*)_d([0-9]+)_l([0-9\.]+)_t([0-9\.]+)_r_mt_b150_clip0_840B\.300d_w([0-9\.]+)_"+dataset+'_seed(\d+)(:?_bh([0-9]+))?_\w+')
 
     global_best = None
     global_best_val = -1 if type == 0 else 1000
@@ -63,6 +64,10 @@ def main(args):
             t = add_val(res, 4, ts)
             w = add_val(res, 5, ws)
             s = add_val(res, 6, ss)
+            b = add_val(res, 7, bs)
+
+            if b is None:
+                continue
 
             if best > global_best_val and type == 0 or (best < global_best_val and type == 1):
                 global_best = f
@@ -74,6 +79,7 @@ def main(args):
             ts[t].append(best)
             ws[w].append(best)
             ss[s].append(best)
+            bs[b].append(best)
 
     analyze("patterns", ps, type)
     analyze("learning rate", ls, type)
@@ -81,6 +87,7 @@ def main(args):
     analyze("dimension", ds, type)
     analyze("seed", ss, type)
     analyze("word dropout", ws, type)
+    analyze("rnn hidden dim", bs, type)
 
     print("Overall best: {} ({})".format(global_best_val, global_best))
     return 0
