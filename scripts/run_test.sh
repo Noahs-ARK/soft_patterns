@@ -21,16 +21,16 @@ function get_param {
 
     val=$(head -1 ${f} | tr ' ' '\n' | grep -E "\b${name}=" | cut -d '=' -f2 | tr -d "'()" | sed 's/,$//')
 
-    if [ $val == 'True' ]; then
-	echo "--$name"
-    elif [ $val == 'False' ]; then 
+    if [ -z $val ] || [ $val == 'False' ]; then
 	echo ""
+    elif [ $val == 'True' ]; then 
+	echo "--$name"
     else
-	echo ${val}
+	echo --$name ${val}
     fi
 }
 
-model_dir=$(get_param $f model_save_dir)
+model_dir=$(get_param $f model_save_dir | awk '{print $2}')
 
 if [ ${model_num} -eq -1 ]; then
     i=1
@@ -57,10 +57,11 @@ hidden_dim=$(get_param ${f} hidden_dim)
 if [ $model -eq 0 ]; then
     maxplus=$(get_param ${f} maxplus)
     maxtimes=$(get_param ${f} maxtimes)
+
     patterns=$(get_param ${f} patterns)
     rnn=$(get_param ${f} use_rnn)
 
-    s="-p $patterns $maxplus"
+    s="$patterns $maxplus $maxtimes"
 elif [ $model -eq 1 ]; then
     s="--dan"
 elif [ $model -eq 2 ]; then
@@ -72,18 +73,18 @@ fi
 
 
 com="python -u soft_patterns_test.py  \
-    -e ${e} \
+    ${e} \
     --vd ${test_data} \
     --vl ${test_labels} \
     --td '' \
     --tl '' \
-    -d ${mlp_hidden_dim} \
-    --seed $seed \
+    ${mlp_hidden_dim} \
+    $seed \
     -b 150 $gpu \
     $s \
     $rnn \
-    --hidden_dim $hidden_dim \
-    --num_mlp_layers ${num_mlp_layers} \
+    $hidden_dim \
+    ${num_mlp_layers} \
     --input_model ${model_dir}/model_${model_num}.pth"
 
 echo ${com}
