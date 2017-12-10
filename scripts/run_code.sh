@@ -49,11 +49,22 @@ fi
 suffix=''
 
 if [ "$#" -lt 4 ]; then
-	echo "Usage: $0 <Pattern specification> <MLP dim> <Learning rate> <dropout> <reschedule=$r>"\
-	 "<maxplus=$mp (1 for maxplus, 2 for maxtimes, 0 for prob)> <batch size=$b> <gradient clipping (optional)>" \
-	  "<gpu (optional)> <glove index=$glove_index (${gloves[@]})>" \
-	  "<file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases, 3 -- fine grained categories, 4 -- fine grained categories with phrases)>" \
-	   "<word_dropout=$w> <data dir: 0 -- stanford (default), 1 -- amazon, 2 -- ROC stories> <seed=$seed> <bilstm=$bilstm>"\
+	echo "Usage: $0"
+	echo "<Pattern specification>"
+	echo "<MLP dim>"
+	echo "<Learning rate>"
+	echo "<dropout>"
+	echo "<reschedule=$r>"
+	echo "<maxplus=$mp (1 for maxplus, 2 for maxtimes, 0 for prob)>"
+	echo " <batch size=$b>"
+	echo "<gradient clipping (optional)>"
+	echo "<gpu (optional)>" 
+	echo "<glove index=$glove_index (${gloves[@]})>"
+	echo "<file type=$file_type (0 -- lower case, 1 -- case sensitive, 2 -- train with phrases, 3 -- fine grained categories, 4 -- fine grained categories with phrases)>"
+	echo "<word_dropout=$w>"
+	echo " <data dir: 0 -- stanford (default), 1 -- amazon, 2 -- ROC stories>"
+	echo "<seed=$seed>"
+	echo "<bilstm=$bilstm>"
 
 	echo "Dirs:"
         for i in $(seq 0 $n_dirs); do
@@ -137,7 +148,7 @@ glove=${gloves[$glove_index]}
 
 git_tag=$(git log | head -1 | awk '{print $2}' | cut -b-7)
 
-s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_w${w}_${dirs[$datadir_index]}_seed${seed}_bh${bilstm}${git_tag}
+s=p${p2}_d${dim}_l${lr}_t${t}${rs}${mps}_b${7}${clips}_${glove}${suffix}_w${w}_${dirs[$datadir_index]}_seed${seed}_bh${bilstm}_${git_tag}
 odir=${model_dir}/output_${s}
 
 data_dir="${resource_dir}/text_cat/${dirs[$datadir_index]}"
