@@ -6,16 +6,73 @@ highest-scoring spans in the dev set.
 import argparse
 from collections import OrderedDict
 import sys
+from functools import total_ordering
+
 import torch
 from torch.autograd import Variable
+from torch.nn import LSTM
+
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
+from rnn import Rnn
 from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
     LogSpaceMaxTimesSemiring, soft_pattern_arg_parser
-from util import chunked, decreasing_length
+from util import decreasing_length
 
 SCORE_IDX = 0
 START_IDX_IDX = 1
 END_IDX_IDX = 2
+
+
+@total_ordering
+class BackPointer:
+    def __init__(self,
+                 score,
+                 previous,
+                 transition,
+                 start_token_idx,
+                 end_token_idx):
+        self.score = score
+        self.previous = previous
+        self.transition = transition
+        self.start_token_idx = start_token_idx
+        self.end_token_idx = end_token_idx
+
+    def __eq__(self, other):
+        return self.score == other.score
+
+    def __ne__(self, other):
+        return not (self == other)
+
+    def __lt__(self, other):
+        return self.score < other.score
+
+    def __repr__(self):
+        return \
+            "BackPointer(" \
+                "score={}, " \
+                "previous={}, " \
+                "transition={}, " \
+                "start_token_idx={}, " \
+                "end_token_idx={}" \
+            ")".format(
+                self.score,
+                self.previous,
+                self.transition,
+                self.start_token_idx,
+                self.end_token_idx
+            )
+
+    def display(self, doc_text, extra=""):
+        if self.previous is None:
+            return extra  # " ".join("{:<15}".format(s) for s in doc_text[self.start_token_idx:self.end_token_idx])
+        if self.transition == "self-loop":
+            extra = "SL {:<15}".format(doc_text[self.end_token_idx-1]) + extra
+            return self.previous.display(doc_text, extra=extra)
+        if self.transition == "happy path":
+            extra = "HP {:<15}".format(doc_text[self.end_token_idx - 1]) + extra
+            return self.previous.display(doc_text, extra=extra)
+        extra = "ep {:<15}".format("") + extra
+        return self.previous.display(doc_text, extra=extra)
 
 
 def get_nearest_neighbors(w, embeddings, k=1000):
@@ -29,8 +86,6 @@ def get_nearest_neighbors(w, embeddings, k=1000):
 
 
 def visualize_patterns(model,
-                       semiring,
-                       batch_size,
                        dev_set=None,
                        dev_text=None,
                        k_best=5):
@@ -40,7 +95,7 @@ def visualize_patterns(model,
     num_patterns = model.total_num_patterns
     pattern_length = model.max_pattern_length
 
-    scores = get_top_scoring_sequences(model, semiring, dev_set, batch_size)
+    back_pointers = list(get_top_scoring_sequences(model, dev_set))
 
     nearest_neighbors = \
         get_nearest_neighbors(
@@ -66,15 +121,13 @@ def visualize_patterns(model,
         k_best_doc_idxs = \
             sorted(
                 range(len(dev_set)),
-                key=lambda doc_idx: scores[p, doc_idx, SCORE_IDX],
+                key=lambda doc_idx: back_pointers[doc_idx][p].score,
                 reverse=True  # high-scores first
             )[:k_best]
 
         def span_text(doc_idx):
-            score = scores[p, doc_idx, SCORE_IDX]
-            start_idx = int(scores[p, doc_idx, START_IDX_IDX])
-            end_idx = int(scores[p, doc_idx, END_IDX_IDX])
-            return score, " ".join("{:<15}".format(s) for s in dev_text[doc_idx][start_idx:end_idx])
+            back_pointer = back_pointers[doc_idx][p]
+            return back_pointer.score, back_pointer.display(dev_text[doc_idx])
 
         print("Pattern:", p, "of length", p_len)
         print("Highest scoring spans:")
@@ -102,68 +155,143 @@ def visualize_patterns(model,
         print()
 
 
-def get_top_scoring_sequences(self, semiring, dev_set, max_batch_size):
-    """
-    Get top scoring sequence in doc for this pattern (for interpretation purposes)
-    """
-    debug_print = int(100 / max_batch_size) + 1
+def zip_ap_2d(f, a, b):
+    return [
+        [
+            f(x, y) for x, y in zip(xs, ys)
+        ]
+        for xs, ys in zip(a, b)
+    ]
 
-    # max_scores[pattern_idx, doc_idx, 0] = `score` of best span
-    # max_scores[pattern_idx, doc_idx, 1] = `start_token_idx` of best span
-    # max_scores[pattern_idx, doc_idx, 2] = `end_token_idx + 1` of best span
-    max_scores = semiring.zero(self.total_num_patterns, len(dev_set), 3)
 
-    eps_value = self.get_eps_value()
+def cat_2d(padding, a):
+    return [
+        [p] + xs
+        for p, xs in zip(padding, a)
+    ]
 
-    delta = 0
-    # dev_set must already be sorted by decreasing length
-    for batch_idx, chunk in enumerate(chunked(dev_set, max_batch_size)):
-        if batch_idx % debug_print == debug_print - 1:
+
+def transition_once_with_trace(model,
+                               token_idx,
+                               eps_value,
+                               back_pointers,
+                               transition_matrix_val,
+                               restart_padding):
+    def times(a, b):
+        # wildly inefficient, oh well
+        return model.semiring.times(
+            torch.FloatTensor([a]),
+            torch.FloatTensor([b])
+        )[0]
+
+    # Epsilon transitions (don't consume a token, move forward one state)
+    # We do this before self-loops and single-steps.
+    # We only allow one epsilon transition in a row.
+    epsilons = cat_2d(
+        restart_padding(token_idx),
+        zip_ap_2d(
+            lambda bp, e: BackPointer(score=times(bp.score, e),
+                                      previous=bp,
+                                      transition="epsilon-transition",
+                                      start_token_idx=bp.start_token_idx,
+                                      end_token_idx=token_idx),
+            [xs[:-1] for xs in back_pointers],
+            eps_value  # doesn't depend on token, just state
+        )
+    )
+
+    epsilons = zip_ap_2d(max, back_pointers, epsilons)
+
+    happy_paths = cat_2d(
+        restart_padding(token_idx),
+        zip_ap_2d(
+            lambda bp, t: BackPointer(score=times(bp.score, t),
+                                      previous=bp,
+                                      transition="happy path",
+                                      start_token_idx=bp.start_token_idx,
+                                      end_token_idx=token_idx + 1),
+            [xs[:-1] for xs in epsilons],
+            transition_matrix_val[:, 1, :-1]
+        )
+    )
+
+    # Adding self loops (consume a token, stay in same state)
+    self_loops = zip_ap_2d(
+        lambda bp, sl: BackPointer(score=times(bp.score, sl),
+                                   previous=bp,
+                                   transition="self-loop",
+                                   start_token_idx=bp.start_token_idx,
+                                   end_token_idx=token_idx + 1),
+        epsilons,
+        transition_matrix_val[:, 0, :]
+    )
+    return zip_ap_2d(max, happy_paths, self_loops)
+
+
+def get_top_scoring_spans_for_doc(model, doc):
+    batch = Batch([doc[0]], model.embeddings, model.to_cuda)  # single doc
+    transition_matrices = model.get_transition_matrices(batch)
+    num_patterns = model.total_num_patterns
+    end_states = model.end_states.data.view(num_patterns)
+
+    def restart_padding(t):
+        return [
+            BackPointer(
+                score=x,
+                previous=None,
+                transition=None,
+                start_token_idx=t,
+                end_token_idx=t
+            )
+            for x in model.semiring.one(num_patterns)
+        ]
+
+    eps_value = model.get_eps_value().data
+    hiddens = model.semiring.zero(num_patterns, model.max_pattern_length)
+    # set start state activation to 1 for each pattern in each doc
+    hiddens[:, 0] = model.semiring.one(num_patterns, 1)
+    # convert to back-pointers
+    hiddens = \
+        [
+            [
+                BackPointer(
+                    score=state_activation,
+                    previous=None,
+                    transition=None,
+                    start_token_idx=0,
+                    end_token_idx=0
+                )
+                for state_activation in pattern
+            ]
+            for pattern in hiddens
+        ]
+    # extract end-states
+    end_state_back_pointers = [
+        bp[end_state]
+        for bp, end_state in zip(hiddens, end_states)
+    ]
+    for token_idx, transition_matrix in enumerate(transition_matrices):
+        transition_matrix = transition_matrix[0, :, :, :].data
+        hiddens = transition_once_with_trace(model,
+                                             token_idx,
+                                             eps_value,
+                                             hiddens,
+                                             transition_matrix,
+                                             restart_padding)
+        # extract end-states and max with current bests
+        end_state_back_pointers = [
+            max(best_bp, hidden_bps[end_state])
+            for best_bp, hidden_bps, end_state in zip(end_state_back_pointers, hiddens, end_states)
+        ]
+    return end_state_back_pointers
+
+
+def get_top_scoring_sequences(model, dev_set):
+    """ Get top scoring sequences for every pattern and doc. """
+    for doc_idx, doc in enumerate(dev_set):
+        if doc_idx % 100 == 99:
             print(".", end="", flush=True)
-
-        batch = Batch([x for x, y in chunk], self.embeddings, self.to_cuda)
-
-        transition_matrices = self.get_transition_matrices(batch)
-
-        batch_size = batch.size()  # the last batch might be smaller than `max_batch_size`
-        num_patterns = self.total_num_patterns
-
-        # will be used for `restart_padding` also
-        zero_padding = self.to_cuda(fixed_var(self.semiring.zero(batch_size, num_patterns, 1)))
-
-        batch_end_state_idxs = self.end_states.expand(batch_size, num_patterns, 1)
-
-        for start_token_idx in range(batch.max_doc_len):
-            hiddens = self.to_cuda(Variable(self.semiring.zero(batch_size,
-                                                               num_patterns,
-                                                               self.max_pattern_length)))
-            # set start state (0) to 1 for each pattern in each doc
-            hiddens[:, :, 0] = self.to_cuda(self.semiring.one(batch_size, num_patterns, 1))
-            # iterate over every span starting at `start_token_idx`
-            for token_idx_in_span, transition_matrix in enumerate(transition_matrices[start_token_idx:]):
-                end_token_idx = start_token_idx + token_idx_in_span
-                hiddens = self.transition_once(eps_value,
-                                               hiddens,
-                                               transition_matrix,
-                                               zero_padding,
-                                               restart_padding=zero_padding)
-
-                # Score for each pattern is the value at the end state
-                scores = torch.gather(hiddens, 2, batch_end_state_idxs).view(batch_size, num_patterns)
-                # but only count score when we're not already past the end of the doc
-                active_doc_idxs = torch.nonzero(torch.gt(batch.doc_lens, end_token_idx)).squeeze()
-                for pattern_idx in range(num_patterns):
-                    for doc_idx in active_doc_idxs:
-                        abs_idx = delta + doc_idx
-                        score = scores[doc_idx, pattern_idx].data[0]
-                        if score >= max_scores[pattern_idx, abs_idx, SCORE_IDX]:
-                            max_scores[pattern_idx, abs_idx, SCORE_IDX] = score
-                            max_scores[pattern_idx, abs_idx, START_IDX_IDX] = start_token_idx
-                            max_scores[pattern_idx, abs_idx, END_IDX_IDX] = end_token_idx + 1
-        delta += batch_size
-
-    print()
-    return max_scores
+        yield get_top_scoring_spans_for_doc(model, doc)
 
 
 # TODO: refactor duplicate code with soft_patterns.py
@@ -205,8 +333,7 @@ def main(args):
         rnn = Rnn(word_dim,
                   args.hidden_dim,
                   cell_type=LSTM,
-                  gpu=args.gpu,
-                  dropout=args.dropout)
+                  gpu=args.gpu)
     else:
         rnn = None
 
@@ -220,7 +347,7 @@ def main(args):
     state_dict = torch.load(args.input_model)
     model.load_state_dict(state_dict)
 
-    visualize_patterns(model, semiring, args.batch_size, dev_data, dev_text)
+    visualize_patterns(model, dev_data, dev_text)
 
     return 0
 

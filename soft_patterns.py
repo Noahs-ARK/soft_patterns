@@ -68,12 +68,36 @@ def neg_infinity(*sizes):
 
 
 # element-wise plus, times
-ProbSemiring = Semiring(zeros, ones, torch.add, torch.mul, sigmoid, identity)
+ProbSemiring = \
+    Semiring(
+        zeros,
+        ones,
+        torch.add,
+        torch.mul,
+        sigmoid,
+        identity
+    )
 
 # element-wise max, plus
-MaxPlusSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, identity, identity)
+MaxPlusSemiring = \
+    Semiring(
+        neg_infinity,
+        zeros,
+        torch.max,
+        torch.add,
+        identity,
+        identity
+    )
 # element-wise max, times. in log-space
-LogSpaceMaxTimesSemiring = Semiring(neg_infinity, zeros, torch.max, torch.add, lambda x: torch.log(torch.sigmoid(x)), torch.exp)
+LogSpaceMaxTimesSemiring = \
+    Semiring(
+        neg_infinity,
+        zeros,
+        torch.max,
+        torch.add,
+        lambda x: torch.log(torch.sigmoid(x)),
+        torch.exp
+    )
 
 
 class Batch:
@@ -175,6 +199,7 @@ class SoftPatternClassifier(Module):
         self.epsilon = Parameter(self.to_cuda(randn(self.total_num_patterns, self.max_pattern_length - 1)))
 
         # TODO: learned? hyperparameter?
+        # since these are currently fixed to `semiring.one`, they are not doing anything.
         self.epsilon_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
         self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
 
@@ -353,8 +378,8 @@ class SoftPatternClassifier(Module):
                         restart_padding):
         # Adding epsilon transitions (don't consume a token, move forward one state)
         # We do this before self-loops and single-steps.
-        # We only allow one epsilon transition in a row.
-        hiddens = \
+        # We only allow zero or one epsilon transition in a row.
+        epsilons = \
             self.semiring.plus(
                 hiddens,
                 cat((zero_padding,
@@ -364,26 +389,23 @@ class SoftPatternClassifier(Module):
                      )), 2)
             )
 
-        result = \
+        happy_paths = \
             cat((restart_padding,  # <- Adding the start state
                  self.semiring.times(
-                     hiddens[:, :, :-1],
+                     epsilons[:, :, :-1],
                      transition_matrix_val[:, :, 1, :-1])
                  ), 2)
 
         # Adding self loops (consume a token, stay in same state)
-        result = \
-            self.semiring.plus(
-                result,
-                self.semiring.times(
-                    self.self_loop_scale,
-                    self.semiring.times(
-                        hiddens,
-                        transition_matrix_val[:, :, 0, :]
-                    )
-                )
+        self_loops = self.semiring.times(
+            self.self_loop_scale,
+            self.semiring.times(
+                epsilons,
+                transition_matrix_val[:, :, 0, :]
             )
-        return result
+        )
+        # either happy or self-loop, not both
+        return self.semiring.plus(happy_paths, self_loops)
 
     def predict(self, batch, debug=0):
         output = self.forward(batch, debug).data
