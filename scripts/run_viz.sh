@@ -18,15 +18,22 @@ function get_param {
     local name=$2
 
     val=$(head -1 ${f} | tr ' ' '\n' | grep -E "\b${name}=" | cut -d '=' -f2 | tr -d "'()" | sed 's/,$//')
-    echo ${val}
+
+    if [ -z $val ] || [ $val == 'False' ]; then
+    	echo ""
+    elif [ $val == 'True' ]; then
+	    echo "--$name"
+    else
+	    echo --$name ${val}
+    fi
 }
 
-model_dir=$(get_param $f model_save_dir)
+
+model_dir=$(get_param $f model_save_dir | awk '{print $2}')
 
 if [ ${model_num} -eq -1 ]; then
     i=1
-    while [ ! -e ${model_dir}/model_${model_num}.pth ];
-    do
+    while [ ! -e ${model_dir}/model_${model_num}.pth ]; do
 	model_num=$(grep loss $f | awk '{print $2" "$NF}' | sort -rnk2 | sed "${i}q;d" | awk '{print $1}')
 	let i++
     done
@@ -40,35 +47,27 @@ fi
 
 e=$(get_param ${f} embedding_file)
 maxplus=$(get_param ${f} maxplus)
-
-if [ "${maxplus}" == 'True' ]; then
-    maxplus="--maxplus"
-else
-    maxtimes=$(get_param ${f} maxtimes)
-    if [ "${maxtimes}" == 'True' ]; then
-        maxplus="--maxtimes"
-    else
-        maxplus=''
-    fi
-fi
-
-
+maxtimes=$(get_param ${f} maxtimes)
+echo $maxtimes is mt
 mlp_hidden_dim=$(get_param ${f} mlp_hidden_dim)
 num_mlp_layers=$(get_param ${f} num_mlp_layers)
 patterns=$(get_param ${f} patterns)
-vd=$(get_param ${f} vd)
-vl=$(get_param ${f} vl)
+seed=$(get_param ${f} seed)
+vd=$(get_param ${f} td | awk '{print $2}')
+vl=$(get_param ${f} tl | awk '{print $2}')
 
 
 com="python -u visualize.py  \
-    -e ${e} \
-    -p ${patterns} \
+    ${e} \
+    ${patterns} \
     --vd ${vd} \
     --vl ${vl} \
-    -d ${mlp_hidden_dim} \
+    $seed \
+    ${mlp_hidden_dim} \
     ${maxplus} \
-    -b 60 \
-    --num_mlp_layers ${num_mlp_layers} \
+    ${maxtimes} \
+    -b 15 \
+    ${num_mlp_layers} \
     --input_model ${model_dir}/model_${model_num}.pth"
 
 echo ${com}

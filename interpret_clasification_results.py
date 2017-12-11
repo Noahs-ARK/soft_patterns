@@ -7,7 +7,8 @@ import argparse
 from collections import OrderedDict
 import sys
 import torch
-from torch.nn.functional import log_softmax
+from visualize import get_top_scoring_spans_for_doc
+from torch.nn.functional import softmax
 from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
 from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
@@ -28,7 +29,7 @@ def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
             res, scores = model.forward(batch, 1)
             print("ss", scores.size())
 
-            output = log_softmax(res).data
+            output = softmax(res).data
 
             predictions = [int(x) for x in argmax(output)]
 
@@ -45,14 +46,17 @@ def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
                 scores_data[:, i] = 0
 
                 # Running mlp.forward() with zeroed out scores.
-                forwarded = log_softmax(model.mlp.forward(Variable(torch.FloatTensor(scores_data)))).data.numpy()
+                forwarded = softmax(model.mlp.forward(Variable(torch.FloatTensor(scores_data)))).data.numpy()
 
                 # Computing difference between forwarded scores and original scores.
                 for k in range(batch.size()):
-                    diffs[i,k] = output[k, predictions[k]] - \
-                                 output[k, 1 - predictions[k]] - \
-                                 forwarded[k, predictions[k]] + \
-                                 forwarded[k, 1 - predictions[k]]
+                    # diffs[i,k] = output[k, predictions[k]] - \
+                    #              output[k, 1 - predictions[k]] - \
+                    #              forwarded[k, predictions[k]] + \
+                    #              forwarded[k, 1 - predictions[k]]
+
+                    diffs[i, k] = forwarded[k, 1 - predictions[k]] - output[k, 1 - predictions[k]]
+
 
             # Now, traversing documents in batch
             for i in range(batch.size()):
@@ -65,8 +69,11 @@ def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
                 # Top ten patterns with largest overall score (regardless of classification)
                 top_ten_scores = sorted(enumerate(scores.data.numpy()[i, :]), key=lambda x: x[1], reverse=True)[:10]
 
+                top_scoring_spans = get_top_scoring_spans_for_doc(model, dev_data[j])
+
+
                 # Printing out everything.
-                ofh.write("{}   {}   {} All in, predicted: {:>2,.3f}   All in, other: {:>2,.3f}    Leave one out: {}  Patt scores: {}\n".format(
+                ofh.write("{}   {}   {} All in, predicted: {:>2,.3f}   All in, not-predicted: {:>2,.3f}    Leave one out: {}  Patt scores: {}\n".format(
                                                         dev_data[j][1],
                                                         predictions[i],
                                                         text_str,
@@ -75,6 +82,9 @@ def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
                                                         " ".join(["{}:{:>2,.3f}".format(i,x) for (i,x) in top_ten_deltas]),
                                                         " ".join(["{}:{:>2,.3f}".format(i, x) for (i, x) in
                                                                                            top_ten_scores])))
+                for l in top_ten_deltas:
+                    s = top_scoring_spans[l[0]].display(dev_text[j])
+                    ofh.write(str(int(l[0]))+" "+str(s.encode('utf-8'))[2:-1]+"\n")
                 j += 1
 
 

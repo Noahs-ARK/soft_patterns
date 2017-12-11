@@ -85,10 +85,10 @@ def main(args):
                                       semiring, args.gpu, rnn)
 
     if args.gpu:
-        model.to_cuda(model)
+        state_dict = torch.load(args.input_model)
+    else:
+        state_dict = torch.load(args.input_model, map_location=lambda storage, loc: storage)
 
-    # Loading model
-    state_dict = torch.load(args.input_model)
     model.load_state_dict(state_dict)
 
     test_acc = evaluate_accuracy(model, dev_data, args.batch_size, args.gpu)
