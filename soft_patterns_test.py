@@ -65,7 +65,7 @@ def main(args):
                                        cell_type=cell_type,
                                        gpu=args.gpu)
     else:
-        pattern_specs = OrderedDict(sorted(([int(y) for y in x.split(":")] for x in args.patterns.split(",")),
+        pattern_specs = OrderedDict(sorted(([int(y) for y in x.split("-")] for x in args.patterns.split("_")),
                                            key=lambda t: t[0]))
 
         semiring = \

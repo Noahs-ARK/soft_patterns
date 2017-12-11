@@ -170,7 +170,11 @@ def get_top_scoring_sequences(self, semiring, dev_set, max_batch_size):
 def main(args):
     print(args)
 
-    pattern_specs = OrderedDict(sorted(([int(y) for y in x.split(":")] for x in args.patterns.split(",")),
+    if args.seed != -1:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+
+    pattern_specs = OrderedDict(sorted(([int(y) for y in x.split("-")] for x in args.patterns.split("_")),
                                        key=lambda t: t[0]))
 
     n = args.num_train_instances
@@ -225,6 +229,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                      parents=[soft_pattern_arg_parser()])
+    parser.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
     parser.add_argument("--input_model", help="Input model (to run test and not train)", required=True)
     parser.add_argument("--vd", help="Validation data file", required=True)
     parser.add_argument("--vl", help="Validation labels file", required=True)

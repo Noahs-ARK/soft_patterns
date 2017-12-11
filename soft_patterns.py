@@ -334,6 +334,8 @@ class SoftPatternClassifier(Module):
 
         if debug % 4 == 3:
             return self.mlp.forward(scores), transition_matrices, all_hiddens
+        elif debug % 4 == 1:
+                return self.mlp.forward(scores), scores
         else:
             return self.mlp.forward(scores)
 
@@ -579,7 +581,7 @@ def train(train_data,
 def main(args):
     print(args)
 
-    pattern_specs = OrderedDict(sorted(([int(y) for y in x.split(":")] for x in args.patterns.split(",")),
+    pattern_specs = OrderedDict(sorted(([int(y) for y in x.split("-")] for x in args.patterns.split("_")),
                                 key=lambda t: t[0]))
 
     pre_computed_patterns = None
