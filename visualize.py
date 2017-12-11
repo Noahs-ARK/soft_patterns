@@ -7,7 +7,7 @@ import argparse
 from collections import OrderedDict
 import sys
 from functools import total_ordering
-
+import numpy as np
 import torch
 from torch.autograd import Variable
 from torch.nn import LSTM
