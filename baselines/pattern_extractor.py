@@ -46,7 +46,10 @@ def main(args):
         add_patterns(doc, words, patterns, args.max_pattern_len, args.use_CW_tokens, args.min_pattern_length)
         # sys.exit(-1)
 
-    thr = args.min_pattern_frequency*len(train_docs)
+    if args.min_pattern_frequency < 1:
+        thr = args.min_pattern_frequency*len(train_docs)
+    else:
+        thr = args.min_pattern_frequency
 
     print("Read", len(patterns), "patterns")
     patterns = {k: patterns[k] for k in patterns.keys() if patterns[k] >= thr}
@@ -128,6 +131,8 @@ def train(train_features, train_labels, dev_features, dev_labels):
     clf = linear_model.LogisticRegression(C=argmax)
 
     clf.fit(train_features, train_labels)
+
+    print("Num of params = ", clf.coef_[0].shape)
 
     return clf
 
