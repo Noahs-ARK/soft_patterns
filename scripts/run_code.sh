@@ -7,7 +7,7 @@ mp=0
 rf=''
 mpf=''
 rs=''
-mps=''
+mps='_pt'
 b=1
 clip=''
 clips=''
@@ -191,7 +191,7 @@ function gen_cluster_file {
     echo "#SBATCH -p normal" >> ${f}         # specify queue
     echo "#SBATCH -N 1" >> ${f}              # Number of nodes, not cores (16 cores/node)
     echo "#SBATCH -n 1" >> ${f}
-    echo "#SBATCH -t 24:00:00" >> ${f}       # max time
+    echo "#SBATCH -t 48:00:00" >> ${f}       # max time
 
     echo "#SBATCH --mail-user=roysch@cs.washington.edu" >> ${f}
     echo "#SBATCH --mail-type=ALL" >> ${f}
