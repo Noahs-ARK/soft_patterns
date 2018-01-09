@@ -15,6 +15,8 @@ model_num=$3
 test_data=$4
 test_labels=$5
 
+n=$(echo $f | awk -F / '{print $NF}')
+
 function get_param {
     local f=$1
     local name=$2
@@ -89,4 +91,36 @@ com="python -u soft_patterns_test.py  \
 
 echo ${com}
 
-${com} | tee ${model_dir}/test_results.dat
+
+function gen_cluster_file {
+    local n=$1
+
+    f=$HOME/work/soft_patterns/test_runs/${n}
+
+    echo "#!/usr/bin/env bash" > ${f}
+    echo "#SBATCH -J test_$n" >> ${f}
+    echo "#SBATCH -o $HOME/work/soft_patterns/test_results/$n" >> ${f}
+    echo "#SBATCH -p normal" >> ${f}         # specify queue
+    echo "#SBATCH -N 1" >> ${f}              # Number of nodes, not cores (16 cores/node)
+    echo "#SBATCH -n 1" >> ${f}
+    echo "#SBATCH -t 01:00:00" >> ${f}       # max time
+
+    echo "#SBATCH --mail-user=roysch@cs.washington.edu" >> ${f}
+    echo "#SBATCH --mail-type=ALL" >> ${f}
+
+    echo "#SBATCH -A TG-DBS110003       # project/allocation number;" >> ${f}
+    echo "source activate torch3" >> ${f}
+
+    echo "mpirun ${com}" >> ${f}
+
+    echo ${f}
+}
+
+if [[ "$HOSTNAME" == *.stampede2.tacc.utexas.edu ]]; then
+    f=$(gen_cluster_file ${n})
+
+    sbatch ${f}
+else
+    ${com} | tee ${model_dir}/test_results.dat
+fi
+
