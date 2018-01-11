@@ -10,8 +10,8 @@ source activate softpatterns
 
 export data_dir=~/data
 export model_dir=~/code/soft_patterns/experiments
-sst_dir="${data_dir}/text_cat/stanford_sentiment_binary"  # or wherever you download the dataset
-wordvec_file="${data_dir}/glove/glove.6B.50d.txt" # e.g.
+export sst_dir="${data_dir}/text_cat/stanford_sentiment_binary"  # or wherever you download the dataset
+export wordvec_file="${data_dir}/glove/glove.6B.50d.txt" # e.g.
 ```
 
 I also had set the following env var on Mac:

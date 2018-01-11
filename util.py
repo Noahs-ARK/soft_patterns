@@ -49,5 +49,13 @@ def shuffled_chunked_sorted(xs, chunk_size):
     return chunks
 
 
+def right_pad(xs, min_len, pad_element):
+    """
+    Appends `pad_element`s to `xs` so that it has length `min_len`.
+    No-op if `len(xs) >= min_len`.
+    """
+    return xs + [pad_element] * (min_len - len(xs))
+
+
 def to_cuda(gpu):
     return (lambda v: v.cuda()) if gpu else identity

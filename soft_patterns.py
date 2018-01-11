@@ -25,7 +25,7 @@ from tensorboardX import SummaryWriter
 from rnn import lstm_arg_parser, Rnn
 from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
 from mlp import MLP, mlp_arg_parser
-from util import shuffled_chunked_sorted, identity, chunked_sorted, to_cuda
+from util import shuffled_chunked_sorted, identity, chunked_sorted, to_cuda, right_pad
 
 CW_TOKEN = "CW"
 EPSILON = 1e-10
@@ -124,7 +124,7 @@ class Batch:
             ]
 
         self.docs = [
-            cuda(fixed_var(torch.LongTensor(mini_vocab.numberize(doc) + [0] * (max_doc_len - len(doc)))))
+            cuda(fixed_var(torch.LongTensor(right_pad(mini_vocab.numberize(doc), max_doc_len, 0))))
             for doc in docs
         ]
         self.doc_lens = cuda(torch.LongTensor([len(doc) for doc in docs]))
