@@ -151,7 +151,9 @@ class SoftPatternClassifier(Module):
                  semiring,
                  gpu=False,
                  rnn=None,
-                 pre_computed_patterns=None):
+                 pre_computed_patterns=None,
+                 no_sl=False,
+                 no_eps=False):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
         self.vocab = vocab
@@ -169,8 +171,16 @@ class SoftPatternClassifier(Module):
         else:
             self.word_dim = self.rnn.num_directions * self.rnn.hidden_dim
         self.num_diags = 2  # self-loops and single-forward-steps
+        self.no_sl = no_sl
+        if not self.no_sl:
+            self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
+            self.num_diags = 1
+
         self.pattern_specs = pattern_specs
         self.max_pattern_length = max(list(pattern_specs.keys()))
+
+
+        self.no_eps = no_eps
 
         # end state index for each pattern
         end_states = [
@@ -196,12 +206,13 @@ class SoftPatternClassifier(Module):
         # Bias term
         self.bias = Parameter(self.to_cuda(bias_data))
 
-        self.epsilon = Parameter(self.to_cuda(randn(self.total_num_patterns, self.max_pattern_length - 1)))
+        if not self.no_eps:
+            self.epsilon = Parameter(self.to_cuda(randn(self.total_num_patterns, self.max_pattern_length - 1)))
 
         # TODO: learned? hyperparameter?
-        # since these are currently fixed to `semiring.one`, they are not doing anything.
-        self.epsilon_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
-        self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
+            # since these are currently fixed to `semiring.one`, they are not doing anything.
+            self.epsilon_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
+
 
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
@@ -365,7 +376,7 @@ class SoftPatternClassifier(Module):
             return self.mlp.forward(scores)
 
     def get_eps_value(self):
-        return self.semiring.times(
+        return None if self.no_eps else self.semiring.times(
             self.epsilon_scale,
             self.semiring.from_float(self.epsilon)
         )
@@ -379,33 +390,42 @@ class SoftPatternClassifier(Module):
         # Adding epsilon transitions (don't consume a token, move forward one state)
         # We do this before self-loops and single-steps.
         # We only allow zero or one epsilon transition in a row.
-        epsilons = \
-            self.semiring.plus(
-                hiddens,
-                cat((zero_padding,
+        if self.no_eps:
+            happy_paths = \
+                cat((restart_padding,  # <- Adding the start state
+                         transition_matrix_val[:, :, -1, :-1])
+                     )
+        else:
+            epsilons = \
+                self.semiring.plus(
+                    hiddens,
+                    cat((zero_padding,
+                         self.semiring.times(
+                             hiddens[:, :, :-1],
+                             eps_value  # doesn't depend on token, just state
+                         )), 2)
+                )
+
+            happy_paths = \
+                cat((restart_padding,  # <- Adding the start state
                      self.semiring.times(
-                         hiddens[:, :, :-1],
-                         eps_value  # doesn't depend on token, just state
-                     )), 2)
-            )
+                         epsilons[:, :, :-1],
+                         transition_matrix_val[:, :, -1, :-1])
+                     ), 2)
 
-        happy_paths = \
-            cat((restart_padding,  # <- Adding the start state
-                 self.semiring.times(
-                     epsilons[:, :, :-1],
-                     transition_matrix_val[:, :, 1, :-1])
-                 ), 2)
-
-        # Adding self loops (consume a token, stay in same state)
-        self_loops = self.semiring.times(
-            self.self_loop_scale,
-            self.semiring.times(
-                epsilons,
-                transition_matrix_val[:, :, 0, :]
+        if self.no_sl:
+            return happy_paths
+        else:
+            # Adding self loops (consume a token, stay in same state)
+            self_loops = self.semiring.times(
+                self.self_loop_scale,
+                self.semiring.times(
+                    epsilons,
+                    transition_matrix_val[:, :, 0, :]
+                )
             )
-        )
-        # either happy or self-loop, not both
-        return self.semiring.plus(happy_paths, self_loops)
+            # either happy or self-loop, not both
+            return self.semiring.plus(happy_paths, self_loops)
 
     def predict(self, batch, debug=0):
         output = self.forward(batch, debug).data
@@ -675,7 +695,9 @@ def main(args):
                                   semiring,
                                   args.gpu,
                                   rnn,
-                                  pre_computed_patterns)
+                                  pre_computed_patterns,
+                                  args.no_sl,
+                                  args.no_eps)
 
     if args.gpu:
         model.to_cuda(model)
@@ -761,6 +783,8 @@ def training_arg_parser():
     p.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     p.add_argument("-m", "--model_save_dir", help="where to save the trained model")
     p.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
+    p.add_argument("--no_sl", help="Don't use self loops", action='store_true')
+    p.add_argument("--no_eps", help="Don't use epsilon transitions", action='store_true')
     p.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
     p.add_argument("--input_model", help="Input model (to run test and not train)")
     p.add_argument("--td", help="Train data file", required=True)
