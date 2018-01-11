@@ -102,9 +102,11 @@ def run_code(all_args, curr_values, data_dir, name, curr_index, gpu):
 		f = gen_cluster_file(s, " ".join(args))
 
 		call(['sbatch', f])
-	elif gpu != None:
-		call(['export', 'CUDA_VISIBLE_DEVICES='+gpu, '&&', 'python', '-u', 'soft_patterns.py', '-g']+  args)
 	else:
+		if gpu != None:
+			os.environ['CUDA_VISIBLE_DEVICES'] = gpu
+			args.append('-g')
+
 		call(['python', '-u', 'soft_patterns.py'] + args)
 
 
