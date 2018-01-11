@@ -32,15 +32,17 @@ def main(args):
 
 	dir = dirs[int(args[1])]
 	data_dir = resource_dir + "/text_cat/" + dir
-	n_instances = int(args[5])
+	n_instances = int(args[3])
 	file_name = args[2]
 
 	name = ".".join(file_name.split("/")[-1].split(".")[:-1])
 	with open(file_name) as ifh:
 		all_args = [l.rstrip().split() for l in ifh]
 
+	all_args = [l if len(l) > 1 else [l[0], ''] for l in all_args]
+
 	n = reduce(mul, [len(x)-1 for x in all_args], 1)
-	# print(all_args)
+	print(all_args)
 
 
 # ps=(6:20,5:20,4:10,3:10,2:10 6:10,5:10,4:10,3:10,2:10 7:10,6:10,5:10,4:10,3:10,2:10 6:10,5:10,4:10 5:10,4:10,3:10,2:10)
@@ -92,7 +94,7 @@ def run_code(all_args, curr_values, data_dir, name, curr_index):
 
 	# print(args)
 
-	HOSTNAME = os.environ['HOME']
+	HOSTNAME = os.environ['HOSTNAME']
 
 	if HOSTNAME.endswith('.stampede2.tacc.utexas.edu'):
 		f = gen_cluster_file(s, " ".join(args))
@@ -106,6 +108,7 @@ def run_code(all_args, curr_values, data_dir, name, curr_index):
 def	gen_cluster_file(s, com):
 	f = model_dir + "/runs/"+s
 
+	print("Writing", f)
 	with open(f, 'w') as ofh:
 		ofh.write("#!/usr/bin/env bash\n")
 		ofh.write("#SBATCH -J "+s+"\n")
@@ -113,7 +116,7 @@ def	gen_cluster_file(s, com):
 		ofh.write("#SBATCH -p normal\n")  # specify queue
 		ofh.write("#SBATCH -N 1\n")  # Number of nodes, not cores (16 cores/node)
 		ofh.write("#SBATCH -n 1\n")
-		ofh.write("#SBATCH -t 24:00:00\n")  # max time
+		ofh.write("#SBATCH -t 48:00:00\n")  # max time
 		ofh.write("#SBATCH --mail-user=roysch@cs.washington.edu\n")
 		ofh.write("#SBATCH --mail-type=ALL\n")
 		ofh.write("#SBATCH -A TG-DBS110003       # project/allocation number;\n")
@@ -122,50 +125,6 @@ def	gen_cluster_file(s, com):
 
 	return f
 
-
-#     glove_dir}/glove.${glove}.txt         \
-	     #    -i 250 \
-	     #     -p $p \
-	     #    -t $t \
-	     #    -d $dim \
-	     #    $bilstms \
-	     #    -l $lr $rf $mpf $clip $gpu\
-	     #    -b $b \
-		# --max_doc_len 100 \
-		# --seed $seed \
-		# -w $w"
-
-
-# i=-1
-# for p in ${ps[@]}; do
-#         for l in ${ls[@]}; do
-#                 for t in ${ts[@]}; do
-#                         for d in ${ds[@]}; do
-#                         	for w in ${ws[@]}; do
-#                             	for h in ${hs[@]}; do
-# 				                	let i++
-# 					                p2=$(echo ${p} | tr ',' '_' | tr ':' '-')
-#                 	                s	=$HOME/work/soft_patterns/output_p${p2}_d${d}_l${l}_t${t}_r_mt_b150_clip0_840B.300d_w${w}_${dir}_seed${2}_bh$h
-#
-#                                     if [ ${ind2[$i]} -eq 0 ]; then
-#                                         echo $i randomed out
-#                                         continue
-#                                     fi
-#
-#                 #					ls ${s}*/output.dat
-#                                     v=$(ls ${s}*/output.dat |& grep 'No such file' | wc -l)
-#
-#                                     if [ $v -gt 0 ]; then
-#                 #						echo run
-#                 #						exit -1
-#                                         export CUDA_VISIBLE_DEVICES=$3 && ./scripts/run_code.sh $p $d $l $t 1 2 150  0 1 2 0 $w $1 $2 $h
-#                                     fi
-# 			                	done
-# 			                done
-#                         done
-#                 done
-#         done
-# done
 
 if __name__ == "__main__":
 	sys.exit(main(sys.argv))
