@@ -23,12 +23,15 @@ resource_dir = WORK + "/resources/"
 
 
 def main(args):
-	if len(args) < 3:
-		print("Usage:", args[0], "<dataset> <file name> <n instsances>")
+	gpu = None
+	if len(args) < 4:
+		print("Usage:", args[0], "<dataset> <file name> <n instsances> <gpu (optional)>")
 		print("Dirs are:")
 		for i in range(n_dirs):
 			print("{}: {}".format(i, dirs[i]))
 		return -1
+	elif len(args) > 4:
+		gpu = args[4]
 
 	dir = dirs[int(args[1])]
 	data_dir = resource_dir + "/text_cat/" + dir
@@ -57,13 +60,13 @@ def main(args):
 	shuffle(indices_to_run)
 	indices_to_run = set(indices_to_run[:n_instances])
 	# print("In2run:", indices_to_run)
-	recursive_run_code(all_args, 0, 0, [], data_dir, indices_to_run, name)
+	recursive_run_code(all_args, 0, 0, [], data_dir, indices_to_run, name, gpu)
 
-def recursive_run_code(all_args, curr_param_index, curr_index, curr_values, data_dir, indices_to_run, name):
+def recursive_run_code(all_args, curr_param_index, curr_index, curr_values, data_dir, indices_to_run, name, gpu):
 	if curr_param_index == len(all_args):
 		curr_index += 1
 		if curr_index in indices_to_run:
-			run_code(all_args, curr_values, data_dir, name, curr_index)
+			run_code(all_args, curr_values, data_dir, name, curr_index, gpu)
 		# else:
 		# 	print(curr_index, "failed")
 	else:
@@ -71,11 +74,11 @@ def recursive_run_code(all_args, curr_param_index, curr_index, curr_values, data
 			curr_values_tmp = copy.deepcopy(curr_values)
 			curr_values_tmp.append(j)
 			curr_index = recursive_run_code(all_args, curr_param_index + 1, curr_index, curr_values_tmp, data_dir,
-											indices_to_run, name)
+											indices_to_run, name, gpu)
 
 	return curr_index
 
-def run_code(all_args, curr_values, data_dir, name, curr_index):
+def run_code(all_args, curr_values, data_dir, name, curr_index, gpu):
 	# print("Running", name, "with args", curr_values)
 
 
@@ -91,18 +94,18 @@ def run_code(all_args, curr_values, data_dir, name, curr_index):
 	params = [item for sublist in params for item in sublist]
 	args += params
 
-
 	# print(args)
 
-	HOSTNAME = os.environ['HOSTNAME']
+	HOSTNAME = os.environ['HOSTNAME'] if 'HOSTNAME' in os.environ else ''
 
 	if HOSTNAME.endswith('.stampede2.tacc.utexas.edu'):
 		f = gen_cluster_file(s, " ".join(args))
 
 		call(['sbatch', f])
+	elif gpu != None:
+		call(['export', 'CUDA_VISIBLE_DEVICES='+gpu, '&&', 'python', '-u', 'soft_patterns.py', '-g']+  args)
 	else:
-		call(['python', '-u', 'soft_patterns.py']+  args)
-
+		call(['python', '-u', 'soft_patterns.py'] + args)
 
 
 def	gen_cluster_file(s, com):
