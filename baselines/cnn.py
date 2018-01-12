@@ -78,7 +78,8 @@ class Cnn(Module):
     def forward(self, batch, debug=0, dropout=None):
         docs = batch.docs
         doc_lens = batch.doc_lens
-        b, max_doc_len = doc_lens.size()
+        b = len(docs)
+        max_doc_len = max(list(doc_lens))
         docs_vectors = \
             torch.stack(
                 [
@@ -203,12 +204,14 @@ def main(args):
     vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
-    dev_input, dev_text = read_docs(args.vd, vocab, 1)
+    num_padding_tokens = args.window_size - 1
+
+    dev_input, dev_text = read_docs(args.vd, vocab, num_padding_tokens=num_padding_tokens)
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
 
     np.random.shuffle(dev_data)
-    train_input, _ = read_docs(args.td, vocab, 1)
+    train_input, _ = read_docs(args.td, vocab, num_padding_tokens=num_padding_tokens)
     train_labels = read_labels(args.tl)
 
     print("training instances:", len(train_input))
@@ -277,6 +280,7 @@ def main(args):
 def cnn_arg_parser():
     """ CLI args related to the MLP module """
     p = ArgumentParser(add_help=False)
+    # we're running out of letters!
     p.add_argument("-c", "--cnn_hidden_dim", help="CNN hidden dimension", type=int, default=200)
     p.add_argument("-x", "--num_cnn_layers", help="Number of MLP layers", type=int, default=2)
     p.add_argument("-z", "--window_size", help="Size of window of CNN", type=int, default=3)

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to visualize the patterns in a SoftPatterns model based on their
-highest-scoring spans in the dev set.
+Script to evaluate the accuracy of a model.
 """
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
@@ -39,7 +38,14 @@ def main(args):
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
 
-    dev_input, dev_text = read_docs(args.vd, vocab, 0)
+    if args.dan or args.bilstm:
+        num_padding_tokens = 1
+    else:
+        pattern_specs = OrderedDict(sorted(([int(y) for y in x.split("-")] for x in args.patterns.split("_")),
+                                           key=lambda t: t[0]))
+        num_padding_tokens = max(list(pattern_specs.keys())) - 1
+
+    dev_input, dev_text = read_docs(args.vd, vocab, num_padding_tokens=num_padding_tokens)
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
     if n is not None:
@@ -50,10 +56,10 @@ def main(args):
 
     if args.dan:
         model = DanClassifier(mlp_hidden_dim,
-                                  num_mlp_layers,
-                                  num_classes,
-                                  embeddings,
-                                  args.gpu)
+                              num_mlp_layers,
+                              num_classes,
+                              embeddings,
+                              args.gpu)
     elif args.bilstm:
         cell_type = LSTM
 
@@ -65,9 +71,6 @@ def main(args):
                                        cell_type=cell_type,
                                        gpu=args.gpu)
     else:
-        pattern_specs = OrderedDict(sorted(([int(y) for y in x.split("-")] for x in args.patterns.split("_")),
-                                           key=lambda t: t[0]))
-
         semiring = \
             MaxPlusSemiring if args.maxplus else (
                 LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
@@ -75,9 +78,9 @@ def main(args):
 
         if args.use_rnn:
             rnn = Rnn(word_dim,
-                  args.hidden_dim,
-                  cell_type=LSTM,
-                  gpu=args.gpu)
+                      args.hidden_dim,
+                      cell_type=LSTM,
+                      gpu=args.gpu)
         else:
             rnn = None
 

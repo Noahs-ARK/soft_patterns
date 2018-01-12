@@ -6,6 +6,11 @@ from util import nub
 
 PRINTABLE = set(string.printable)
 UNK_TOKEN = "*UNK*"
+START_TOKEN = "*START*"
+END_TOKEN = "*END*"
+UNK_IDX = 0
+START_TOKEN_IDX = 1
+END_TOKEN_IDX = 2
 
 
 def is_printable(word):
@@ -20,9 +25,11 @@ class Vocab:
     """
     def __init__(self,
                  names,
-                 default=UNK_TOKEN):
+                 default=UNK_TOKEN,
+                 start=START_TOKEN,
+                 end=END_TOKEN):
         self.default = default
-        self.names = list(nub(chain([default], names)))
+        self.names = list(nub(chain([default, start, end], names)))
         self.index = {name: i for i, name in enumerate(self.names)}
 
     def __getitem__(self, index):
@@ -31,7 +38,7 @@ class Vocab:
 
     def __call__(self, name):
         """ Lookup index given name. """
-        return self.index.get(name, 0)
+        return self.index.get(name, UNK_IDX)
 
     def __contains__(self, item):
         return item in self.index
@@ -51,8 +58,13 @@ class Vocab:
         return [self[idx] for idx in doc]
 
     @staticmethod
-    def from_docs(docs, default=UNK_TOKEN):
-        return Vocab((i for doc in docs for i in doc), default=default)
+    def from_docs(docs, default=UNK_TOKEN, start=START_TOKEN, end=END_TOKEN):
+        return Vocab(
+            (i for doc in docs for i in doc),
+            default=default,
+            start=start,
+            end=end
+        )
 
 
 def read_embeddings(filename,
@@ -61,6 +73,9 @@ def read_embeddings(filename,
     print("Reading", filename)
     dim, has_header = check_dim_and_header(filename)
     unk_vec = np.zeros(dim)  # TODO: something better?
+    # TODO: something better! probably should be learned, at the very least should be non-zero
+    left_pad_vec = np.zeros(dim)
+    right_pad_vec = np.zeros(dim)
     with open(filename, encoding='utf-8') as input_file:
         if has_header:
             input_file.readline()  # skip over header
@@ -79,7 +94,8 @@ def read_embeddings(filename,
     print("Done reading", len(word_vecs), "vectors of dimension", dim)
     vocab = Vocab((word for word, _ in word_vecs))
 
-    vecs = [unk_vec] + [vec / np.linalg.norm(vec) for _, vec in word_vecs]
+    # prepend special embeddings to (normalized) word embeddings
+    vecs = [unk_vec, left_pad_vec, right_pad_vec] + [vec / np.linalg.norm(vec) for _, vec in word_vecs]
 
     return vocab, vecs, dim
 
@@ -93,12 +109,10 @@ def check_dim_and_header(filename):
             return len(first_line) - 1, False
 
 
-def read_docs(filename, vocab, min_length):
+def read_docs(filename, vocab, num_padding_tokens=1):
     with open(filename, encoding='ISO-8859-1') as input_file:
         docs = [line.rstrip().split() for line in input_file]
-        docs = [x for x in docs if len(x) >= min_length]
-
-        return [vocab.numberize(doc) for doc in docs], docs
+    return [pad(vocab.numberize(doc), num_padding_tokens) for doc in docs], docs
 
 
 def read_labels(filename):
@@ -109,3 +123,8 @@ def read_labels(filename):
 def vocab_from_text(filename):
     with open(filename, encoding='ISO-8859-1') as input_file:
         return Vocab.from_docs(line.rstrip().split() for line in input_file)
+
+
+def pad(doc, num_padding_tokens=1):
+    """ prepend `START_TOKEN`s and append `END_TOKEN`s to a document """
+    return ([START_TOKEN_IDX] * num_padding_tokens) + doc + ([END_TOKEN_IDX] * num_padding_tokens)
