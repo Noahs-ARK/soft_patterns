@@ -21,6 +21,7 @@ def main(args):
     param_file = args[2]
 
     s=workdir + prefix + '*.out'
+
     files = glob.glob(s)
 
     if len(files) == 0:
@@ -36,13 +37,13 @@ def main(args):
         best = get_top(f, type)
 
         if best != -1:
-            local_params = get_local_params(params, f, best)
+            get_local_params(params, f, best)
 
             if best > global_best_val and type == 0 or (best < global_best_val and type == 1):
                 global_best = f
                 global_best_val = best
 
-    analyze(local_params, type)
+    analyze(params, type)
 
     print("Overall best: {} ({})".format(global_best_val, global_best))
     return 0
@@ -53,19 +54,22 @@ def get_params(param_file):
 
     filtered_params = dict()
     for p in params:
-        if len(p) > 1:
+        if len(p) > 2:
+            p[0] = p[0][2:]
             filtered_params[p[0]] = dict([(x,[]) for x in p[1:]])
 
     return filtered_params
 
 def get_local_params(params, f, v):
     with open(f) as ifh:
-        l = ifh.getline()
+        l = ifh.readline()
 
-    vs = l[10:-1].split()
+    vs = l.rstrip()[10:].split()
 
     for x in vs:
-        e = x.split('=')
+        e = x[:-1].split('=')
+        if e[1][0] == "'":
+            e[1] = e[1][1:-1]
 
         if e[0] in params:
             params[e[0]][e[1]].append(v)
@@ -75,7 +79,7 @@ def analyze(local_params, type):
         print(name+":")
 
         for k,v in local_params[name].items():
-            if len(len(v)):
+            if len(v):
                 print("\t{}: {}: {:,.3f}, Mean: {:,.3f} {}".format(k, "Max" if type == 0 else "Min", np.max(v) if type == 0 else np.min(v), np.mean(v), len(v)))
             else:
                 print("\t",k,"No files")
