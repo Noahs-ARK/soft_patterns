@@ -90,12 +90,13 @@ def main(args):
     vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
-    dev_input, dev_text = read_docs(args.vd, vocab, 1)
+    num_padding_tokens = 1
+    dev_input, dev_text = read_docs(args.vd, vocab, num_padding_tokens=num_padding_tokens)
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
 
     np.random.shuffle(dev_data)
-    train_input, _ = read_docs(args.td, vocab, 1)
+    train_input, _ = read_docs(args.td, vocab, num_padding_tokens=num_padding_tokens)
     train_labels = read_labels(args.tl)
 
     print("training instances:", len(train_input))

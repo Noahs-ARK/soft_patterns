@@ -130,7 +130,7 @@ class TestPatternLengths(unittest.TestCase):
         vocab, embeddings, word_dim = read_embeddings(EMBEDDINGS_FILENAME)
         self.embeddings = embeddings
         max_pattern_length = max(list(PATTERN_SPECS.keys()))
-        self.data = read_docs(DATA_FILENAME, vocab, 0)[0]
+        self.data = read_docs(DATA_FILENAME, vocab, num_padding_tokens=max_pattern_length - 1)[0]
         state_dict = torch.load(MODEL_FILENAME)
         self.model = \
             SoftPatternClassifier(PATTERN_SPECS, MLP_HIDDEN_DIM, NUM_MLP_LAYERS, NUM_CLASSES, embeddings, vocab,

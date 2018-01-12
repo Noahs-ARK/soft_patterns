@@ -1,6 +1,6 @@
 #!/usr/bin/env python -u
 """
-Text classification baseline model "DAN".
+Text classification baseline: bi-LSTM.
 
 example usage:
 ./baselines/lstm.py \
@@ -70,17 +70,17 @@ class AveragingRnnClassifier(Module):
         outs = self.rnn.forward(batch,
                                 debug=debug,
                                 dropout=dropout)
-        padded, _ = pad_packed_sequence(outs)
+        padded, _ = pad_packed_sequence(outs)  # size: (max_doc_len, b, 2 * hidden_dim)
 
         if dropout is not None:
             padded = dropout(padded)
         # average all the hidden states
-        outs_sum = torch.sum(padded, dim=0)
+        outs_sum = torch.sum(padded, dim=0)  # size: (b, 2 * hidden_dim)
         outs_avg = torch.div(
             outs_sum,
             Variable(batch.doc_lens.float().view(b, 1)).expand(b, self.rnn.num_directions * self.rnn.hidden_dim)
-        )
-        return self.mlp.forward(outs_avg)
+        )  # size: (b, 2 * hidden_dim)
+        return self.mlp.forward(outs_avg)  # size: (b, num_classes)
 
     def predict(self, batch, debug=0):
         old_training = self.training
@@ -108,12 +108,14 @@ def main(args):
     vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
-    dev_input, dev_text = read_docs(args.vd, vocab, 1)
+    num_padding_tokens = 1
+
+    dev_input, dev_text = read_docs(args.vd, vocab, num_padding_tokens=num_padding_tokens)
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
 
     np.random.shuffle(dev_data)
-    train_input, _ = read_docs(args.td, vocab, 1)
+    train_input, _ = read_docs(args.td, vocab, num_padding_tokens=num_padding_tokens)
     train_labels = read_labels(args.tl)
 
     print("training instances:", len(train_input))
@@ -173,7 +175,7 @@ def main(args):
           gpu=args.gpu,
           clip=args.clip,
           debug=args.debug,
-          dropout=args.dropout,
+          dropout=dropout,
           word_dropout=args.word_dropout,
           patience=args.patience)
 

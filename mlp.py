@@ -5,7 +5,11 @@ from torch.nn.functional import relu
 
 
 class MLP(Module):
-    """ A multilayer perceptron with one hidden ReLU layer """
+    """
+    A multilayer perceptron with one hidden ReLU layer.
+    Expects an input tensor of size (batch_size, input_dim) and returns
+    a tensor of size (batch_size, output_dim).
+    """
     def __init__(self,
                  input_dim,
                  hidden_layer_dim,

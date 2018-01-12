@@ -7,13 +7,16 @@ import argparse
 from collections import OrderedDict
 import sys
 import torch
+from torch.nn import LSTM
+
+from rnn import Rnn
 from visualize import get_top_scoring_spans_for_doc
 from torch.nn.functional import softmax
 from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
-from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
+from soft_patterns import MaxPlusSemiring, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
     LogSpaceMaxTimesSemiring, soft_pattern_arg_parser
-from util import chunked, decreasing_length
+from util import chunked
 import numpy as np
 
 SCORE_IDX = 0
@@ -57,7 +60,6 @@ def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
 
                     diffs[i, k] = forwarded[k, 1 - predictions[k]] - output[k, 1 - predictions[k]]
 
-
             # Now, traversing documents in batch
             for i in range(batch.size()):
                 # Document string
@@ -70,7 +72,6 @@ def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
                 top_ten_scores = sorted(enumerate(scores.data.numpy()[i, :]), key=lambda x: x[1], reverse=True)[:10]
 
                 top_scoring_spans = get_top_scoring_spans_for_doc(model, dev_data[j])
-
 
                 # Printing out everything.
                 ofh.write("{}   {}   {} All in, predicted: {:>2,.3f}   All in, not-predicted: {:>2,.3f}    Leave one out: +res: {} -res: {} Patt scores: {}\n".format(
@@ -95,9 +96,6 @@ def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
                 j += 1
 
 
-
-
-
 # TODO: refactor duplicate code with soft_patterns.py
 def main(args):
     print(args)
@@ -119,7 +117,9 @@ def main(args):
     vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
-    dev_input, dev_text = read_docs(args.vd, vocab, 0)
+    num_padding_tokens = max(list(pattern_specs.keys())) - 1
+
+    dev_input, dev_text = read_docs(args.vd, vocab, num_padding_tokens=num_padding_tokens)
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
     if n is not None:
@@ -137,8 +137,7 @@ def main(args):
         rnn = Rnn(word_dim,
                   args.hidden_dim,
                   cell_type=LSTM,
-                  gpu=args.gpu,
-                  dropout=args.dropout)
+                  gpu=args.gpu)
     else:
         rnn = None
 

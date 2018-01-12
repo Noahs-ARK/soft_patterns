@@ -8,7 +8,6 @@ import sys
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
 from time import monotonic
-
 import numpy as np
 import os
 import torch
@@ -19,13 +18,12 @@ from torch.nn.functional import sigmoid, log_softmax
 from torch.nn.utils.rnn import pad_packed_sequence
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
 from tensorboardX import SummaryWriter
-
 from rnn import lstm_arg_parser, Rnn
-from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab
+from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab, UNK_IDX, START_TOKEN_IDX, \
+    END_TOKEN_IDX
 from mlp import MLP, mlp_arg_parser
-from util import shuffled_chunked_sorted, identity, chunked_sorted, to_cuda
+from util import shuffled_chunked_sorted, identity, chunked_sorted, to_cuda, right_pad
 
 CW_TOKEN = "CW"
 EPSILON = 1e-10
@@ -101,35 +99,31 @@ LogSpaceMaxTimesSemiring = \
 
 
 class Batch:
+    """
+    A batch of documents.
+    Handles truncating documents to `max_len`, looking up word embeddings,
+    and padding so that all docs in the batch have the same length.
+    Makes a smaller vocab and embeddings matrix, only including words that are in the batch.
+    """
     def __init__(self, docs, embeddings, cuda, word_dropout=0, max_len=-1):
-        """ Makes a smaller vocab of only words used in the given docs """
-        mini_vocab = Vocab.from_docs(docs, default=0)
-        max_doc_len = max(len(doc) for doc in docs)
-
+        mini_vocab = Vocab.from_docs(docs, default=UNK_IDX, start=START_TOKEN_IDX, end=END_TOKEN_IDX)
         # Limit maximum document length (for efficiency reasons).
-        if max_len != -1 and max_doc_len > max_len:
-            max_doc_len = max_len
-
-            # For longer documents, cap documents at max_len
-            docs = [
-                doc[:max_len]
-                for doc in docs
-            ]
-
-        self.max_doc_len = max_doc_len
+        if max_len != -1:
+            docs = [doc[:max_len] for doc in docs]
+        doc_lens = [len(doc) for doc in docs]
+        self.doc_lens = cuda(torch.LongTensor(doc_lens))
+        self.max_doc_len = max(doc_lens)
         if word_dropout:
+            # for each token, with probability `word_dropout`, replace word index with UNK_IDX.
             docs = [
-                [0 if np.random.rand() < word_dropout else x for x in doc]
+                [UNK_IDX if np.random.rand() < word_dropout else x for x in doc]
                 for doc in docs
             ]
-
-        self.docs = [
-            cuda(fixed_var(torch.LongTensor(mini_vocab.numberize(doc) + [0] * (max_doc_len - len(doc)))))
-            for doc in docs
-        ]
-        self.doc_lens = cuda(torch.LongTensor([len(doc) for doc in docs]))
+        # pad docs so they all have the same length.
+        # we pad with UNK, whose embedding is 0, so it doesn't mess up sums or averages.
+        docs = [right_pad(mini_vocab.numberize(doc), self.max_doc_len, UNK_IDX) for doc in docs]
+        self.docs = [cuda(fixed_var(torch.LongTensor(doc))) for doc in docs]
         local_embeddings = [embeddings[i] for i in mini_vocab.names]
-
         self.embeddings_matrix = cuda(fixed_var(FloatTensor(local_embeddings).t()))
 
     def size(self):
@@ -613,7 +607,6 @@ def train(train_data,
                 print("saving model to", model_save_file)
                 torch.save(model.state_dict(), model_save_file)
 
-
         if run_scheduler:
             scheduler.step(dev_loss)
 
@@ -649,14 +642,16 @@ def main(args):
     vocab, embeddings, word_dim = \
         read_embeddings(args.embedding_file, dev_vocab)
 
-    dev_input, dev_text = read_docs(args.vd, vocab, 0)
+    num_padding_tokens = max(list(pattern_specs.keys())) - 1
+
+    dev_input, dev_text = read_docs(args.vd, vocab, num_padding_tokens=num_padding_tokens)
     dev_labels = read_labels(args.vl)
     dev_data = list(zip(dev_input, dev_labels))
 
     np.random.shuffle(dev_data)
     num_iterations = args.num_iterations
 
-    train_input, _ = read_docs(args.td, vocab, 0)
+    train_input, _ = read_docs(args.td, vocab, num_padding_tokens=num_padding_tokens)
     train_labels = read_labels(args.tl)
 
     print("training instances:", len(train_input))
