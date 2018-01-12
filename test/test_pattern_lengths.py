@@ -134,7 +134,7 @@ class TestPatternLengths(unittest.TestCase):
         state_dict = torch.load(MODEL_FILENAME)
         self.model = \
             SoftPatternClassifier(PATTERN_SPECS, MLP_HIDDEN_DIM, NUM_MLP_LAYERS, NUM_CLASSES, embeddings, vocab,
-                                  SEMIRING, pre_computed_patterns, GPU)
+                                  SEMIRING, GPU)
         self.model.load_state_dict(state_dict)
 
     def test_pattern_lengths(self):

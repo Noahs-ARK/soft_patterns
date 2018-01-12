@@ -67,26 +67,30 @@ def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
 
                 # Top ten patterns with largest differences between leave-one-out score and original score.
                 top_ten_deltas = sorted(enumerate(diffs[:, i]), key=lambda x: x[1], reverse=True)[:10]
-
+                top_ten_neg_deltas = sorted(enumerate(diffs[:, i]), key=lambda x: x[1])[:10]
                 # Top ten patterns with largest overall score (regardless of classification)
                 top_ten_scores = sorted(enumerate(scores.data.numpy()[i, :]), key=lambda x: x[1], reverse=True)[:10]
 
                 top_scoring_spans = get_top_scoring_spans_for_doc(model, dev_data[j])
 
                 # Printing out everything.
-                ofh.write(
-                    ("{}   {}   {} All in, predicted: {:>2,.3f}   All in, not-predicted: {:>2,.3f}    Leave one out: {"
-                     "}  Patt scores: {}\n").format(
-                        dev_data[j][1],
-                        predictions[i],
-                        text_str,
-                        output[i, predictions[i]],
-                        output[i, 1-predictions[i]],
-                        " ".join(["{}:{:>2,.3f}".format(i, x) for (i, x) in top_ten_deltas]),
-                        " ".join(["{}:{:>2,.3f}".format(i, x) for (i, x) in top_ten_scores])
-                    )
-                )
+                ofh.write("{}   {}   {} All in, predicted: {:>2,.3f}   All in, not-predicted: {:>2,.3f}    Leave one out: +res: {} -res: {} Patt scores: {}\n".format(
+                                                        dev_data[j][1],
+                                                        predictions[i],
+                                                        text_str,
+                                                        output[i, predictions[i]],
+                                                        output[i, 1-predictions[i]],
+                                                        " ".join(["{}:{:>2,.3f}".format(i,x) for (i,x) in top_ten_deltas]),
+                                                        " ".join(["{}:{:>2,.3f}".format(i,x) for (i,x) in top_ten_neg_deltas]),
+                                                        " ".join(["{}:{:>2,.3f}".format(i, x) for (i, x) in
+                                                                                           top_ten_scores])))
+                ofh.write("Top ten deltas:\n")
                 for l in top_ten_deltas:
+                    s = top_scoring_spans[l[0]].display(dev_text[j])
+                    ofh.write(str(int(l[0]))+" "+str(s.encode('utf-8'))[2:-1]+"\n")
+
+                ofh.write("Top ten negative deltas:\n")
+                for l in top_ten_neg_deltas:
                     s = top_scoring_spans[l[0]].display(dev_text[j])
                     ofh.write(str(int(l[0]))+" "+str(s.encode('utf-8'))[2:-1]+"\n")
                 j += 1

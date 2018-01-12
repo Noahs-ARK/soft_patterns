@@ -349,7 +349,7 @@ def main(args):
 
     model.load_state_dict(state_dict)
 
-    visualize_patterns(model, dev_data, dev_text)
+    visualize_patterns(model, dev_data, dev_text, args.k_best)
 
     return 0
 
@@ -363,6 +363,7 @@ if __name__ == '__main__':
     parser.add_argument("--vd", help="Validation data file", required=True)
     parser.add_argument("--vl", help="Validation labels file", required=True)
     parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
+    parser.add_argument("-k", "--k_best", help="Number of nearest neighbor phrases", type=int, default=5)
     parser.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
 
     sys.exit(main(parser.parse_args()))

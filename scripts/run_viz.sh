@@ -66,7 +66,8 @@ com="python -u visualize.py  \
     ${mlp_hidden_dim} \
     ${maxplus} \
     ${maxtimes} \
-    -b 15 \
+    -b 150 \
+    -k 10 \
     ${num_mlp_layers} \
     --input_model ${model_dir}/model_${model_num}.pth"
 
