@@ -170,7 +170,6 @@ class SoftPatternClassifier(Module):
             self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
             self.num_diags = 2
 
-        print("nd is", self.num_diags)
         self.pattern_specs = pattern_specs
         self.max_pattern_length = max(list(pattern_specs.keys()))
 
@@ -388,8 +387,8 @@ class SoftPatternClassifier(Module):
         if self.no_eps:
             happy_paths = \
                 cat((restart_padding,  # <- Adding the start state
-                         transition_matrix_val[:, :, -1, :-1])
-                     )
+                         transition_matrix_val[:, :, -1, :-1]),
+                    2)
         else:
             epsilons = \
                 self.semiring.plus(
