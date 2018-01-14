@@ -164,12 +164,13 @@ class SoftPatternClassifier(Module):
             self.word_dim = len(embeddings[0])
         else:
             self.word_dim = self.rnn.num_directions * self.rnn.hidden_dim
-        self.num_diags = 2  # self-loops and single-forward-steps
+        self.num_diags = 1  # self-loops and single-forward-steps
         self.no_sl = no_sl
         if not self.no_sl:
             self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
-            self.num_diags = 1
+            self.num_diags = 2
 
+        print("nd is", self.num_diags)
         self.pattern_specs = pattern_specs
         self.max_pattern_length = max(list(pattern_specs.keys()))
 
@@ -410,14 +411,20 @@ class SoftPatternClassifier(Module):
         if self.no_sl:
             return happy_paths
         else:
-            # Adding self loops (consume a token, stay in same state)
-            self_loops = self.semiring.times(
-                self.self_loop_scale,
-                self.semiring.times(
-                    epsilons,
+            if self.no_eps:
+                self_loops = self.semiring.times(
+                    self.self_loop_scale,
                     transition_matrix_val[:, :, 0, :]
                 )
-            )
+            else:
+                # Adding self loops (consume a token, stay in same state)
+                self_loops = self.semiring.times(
+                    self.self_loop_scale,
+                    self.semiring.times(
+                        epsilons,
+                        transition_matrix_val[:, :, 0, :]
+                    )
+                )
             # either happy or self-loop, not both
             return self.semiring.plus(happy_paths, self_loops)
 
