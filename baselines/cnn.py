@@ -36,6 +36,37 @@ from mlp import MLP, mlp_arg_parser
 from util import to_cuda
 
 
+def max_pool_seq(packed_seq):
+    """ Given a PackedSequence, max-pools each sequence in the batch. """
+    # unpack
+    padded, _ = pad_packed_sequence(packed_seq)  # size: (max_doc_len, batch_size, *hidden_dims)
+    # max-pool each doc
+    maxes, _ = torch.max(padded, dim=0)  # size: (batch_size, *hidden_dims)
+    return maxes
+
+
+def sum_pool_seq(packed_seq):
+    """ Given a PackedSequence, sum-pools each sequence in the batch. """
+    # unpack
+    padded, lens = pad_packed_sequence(packed_seq)  # size: (max_doc_len, batch_size, *hidden_dims)
+    # sum each doc
+    return torch.sum(padded, dim=0)  # size: (batch_size, *hidden_dims)
+
+
+def average_pool_seq(packed_seq):
+    """ Given a PackedSequence, average-pools each sequence in the batch. """
+    # unpack
+    padded, lens = pad_packed_sequence(packed_seq)  # size: (max_doc_len, batch_size, *hidden_dims)
+    b = len(lens)
+    # sum and normalize by doc length
+    sums = torch.sum(padded, dim=0)  # size: (batch_size, *hidden_dims)
+    # size: (batch_size, *hidden_dims)
+    return torch.div(
+            sums,
+            Variable(torch.FloatTensor(lens).view(b, 1)).expand(*sums.size())
+        )
+
+
 class Cnn(Module):
     """
     A model that runs a deep CNN over a document.
@@ -91,6 +122,7 @@ class Cnn(Module):
         # right pad, so docs are at least as long as self.window_size
         doc_lens = [max(self.window_size, l) for l in doc_lens]
         if max_doc_len < self.window_size:
+            print("max doc length {} is smaller than window size {}".format(max_doc_len, self.window_size))
             docs_vectors = \
                 torch.cat(
                     (docs_vectors, torch.zeros(b, self.window_size - max_doc_len)),
@@ -123,10 +155,10 @@ class Cnn(Module):
         )
 
 
-class AveragingCnnClassifier(Module):
+class PooledCnnClassifier(Module):
     """
     A text classification model that runs a CNN over a document,
-    averages the hidden states, then feeds that into an MLP.
+    pools the hidden states, then feeds that into an MLP.
     `hidden_dim` is used for the hidden layers and output layer of the CNN,
     as well as the hidden layers of the MLP.
     """
@@ -138,14 +170,16 @@ class AveragingCnnClassifier(Module):
                  mlp_hidden_dim,
                  num_classes,
                  embeddings,
+                 pooling=max_pool_seq,
                  gpu=False):
-        super(AveragingCnnClassifier, self).__init__()
+        super(PooledCnnClassifier, self).__init__()
         self.window_size = window_size
         self.hidden_dim = cnn_hidden_dim
         self.num_cnn_layers = num_cnn_layers
         self.num_mlp_layers = num_mlp_layers
         self.num_classes = num_classes
         self.embeddings = embeddings
+        self.pooling = pooling
         self.cnn = \
             Cnn(len(embeddings[0]),
                 cnn_hidden_dim,
@@ -167,16 +201,12 @@ class AveragingCnnClassifier(Module):
         Run a CNN over the batch of docs, average the hidden states, and
         feed into an MLP.
         """
-        b = len(batch.docs)
+        # run CNN
         cnn_outs = self.cnn.forward(batch, debug=debug, dropout=dropout)
-        padded, _ = pad_packed_sequence(cnn_outs)  # size: (max_doc_len - window_size + 1, b, hidden_dim)
-        # average all the hidden states
-        outs_sum = torch.sum(padded, dim=0)  # size (b, hidden_dim)
-        outs_avg = torch.div(
-            outs_sum,
-            Variable(batch.doc_lens.float().view(b, 1)).expand(b, self.hidden_dim)
-        )  # size (b, hidden_dim)
-        return self.mlp.forward(outs_avg)  # size (b, output_dim)
+        # pool the hidden states
+        pooled = self.pooling(cnn_outs)  # size (b, hidden_dim)
+        # run MLP
+        return self.mlp.forward(pooled)  # size (b, output_dim)
 
     def predict(self, batch, debug=0):
         old_training = self.training
@@ -230,8 +260,13 @@ def main(args):
 
     dropout = None if args.td is None else args.dropout
 
+    pooling = sum_pool_seq if args.pooling == "sum" else (
+        average_pool_seq if args.pooling == "avg" else
+        max_pool_seq
+    )
+
     model = \
-        AveragingCnnClassifier(
+        PooledCnnClassifier(
             args.window_size,
             args.num_cnn_layers,
             args.cnn_hidden_dim,
@@ -239,6 +274,7 @@ def main(args):
             args.mlp_hidden_dim,
             num_classes,
             embeddings,
+            pooling=pooling,
             gpu=args.gpu
         )
 
@@ -287,10 +323,11 @@ def cnn_arg_parser():
     return p
 
 
-def averaging_cnn_arg_parser():
+def pooling_cnn_arg_parser():
     p = ArgumentParser(add_help=False,
                        parents=[cnn_arg_parser(), mlp_arg_parser()])
     p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
+    p.add_argument("-p", "--pooling", help="Type of pooling to use [max, sum, avg]", type=str, default="max")
     p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
     p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
     return p
@@ -300,5 +337,5 @@ if __name__ == '__main__':
     parser = \
         ArgumentParser(description=__doc__,
                        formatter_class=ArgumentDefaultsHelpFormatter,
-                       parents=[averaging_cnn_arg_parser(), training_arg_parser()])
+                       parents=[pooling_cnn_arg_parser(), training_arg_parser()])
     main(parser.parse_args())
