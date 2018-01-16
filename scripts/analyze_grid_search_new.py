@@ -6,16 +6,18 @@ import os.path
 import glob
 import numpy as np
 
-home = os.environ.get('HOME')
-workdir=home+"/work/soft_patterns/logs/"
 
 def main(args):
+    home = os.environ.get('HOME')
+    workdir=home+"/work/soft_patterns/logs/"
     type = 0
     if len(args) < 3:
-        print("Usage:",args[0],"<prefix> <param file> <type (0 for accuracy [default], 1 for loss)>")
+        print("Usage:",args[0],"<prefix> <param file> <type (0 for accuracy [default], 1 for loss)> <work_dir = "+workdir+">")
         return -1
     elif len(args) > 3:
         type = int(args[3])
+        if len(args) > 4:
+             workdir = args[4]
 
     prefix = args[1]
     param_file = args[2]
@@ -33,10 +35,12 @@ def main(args):
     global_best = None
     global_best_val = -1 if type == 0 else 1000
 
+    n_files = 0
     for f in files:
         best = get_top(f, type)
 
         if best != -1:
+            n_files += 1
             get_local_params(params, f, best)
 
             if best > global_best_val and type == 0 or (best < global_best_val and type == 1):
@@ -45,7 +49,7 @@ def main(args):
 
     analyze(params, type)
 
-    print("Overall best: {} ({})".format(global_best_val, global_best))
+    print("Overall best across {} files: {} ({})".format(n_files, global_best_val, global_best))
     return 0
 
 def get_params(param_file):
