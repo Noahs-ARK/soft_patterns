@@ -85,7 +85,7 @@ def main(args):
             rnn = None
 
         model = SoftPatternClassifier(pattern_specs, mlp_hidden_dim, num_mlp_layers, num_classes, embeddings, vocab,
-                                      semiring, args.gpu, rnn)
+                                      semiring, args.gpu, rnn, None, args.no_sl, args.no_eps)
 
     if args.gpu:
         state_dict = torch.load(args.input_model)
