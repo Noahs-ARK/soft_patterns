@@ -33,12 +33,12 @@ def main(args):
 	elif len(args) > 4:
 		gpu = args[4]
 
-	dir = dirs[int(args[1])]
-	data_dir = resource_dir + "/text_cat/" + dir
+	ddir = dirs[int(args[1])]
+	data_dir = resource_dir + "/text_cat/" + ddir
 	n_instances = int(args[3])
 	file_name = args[2]
 
-	name = ".".join(file_name.split("/")[-1].split(".")[:-1])
+	name = ddir+'_'+".".join(file_name.split("/")[-1].split(".")[:-1]).split("_")[-1] 
 	with open(file_name) as ifh:
 		all_args = [l.rstrip().split() for l in ifh]
 
@@ -85,7 +85,7 @@ def run_code(all_args, curr_values, data_dir, name, curr_index, gpu):
 	s = name + "." + str(curr_index)
 	odir =  model_dir + "/output_"+s
 
-	args = ["--td",  data_dir + "/train.data", "--tl",  data_dir + "/train.labels",
+	args = ['python', '-u', 'soft_patterns.py', "--td",  data_dir + "/train.data", "--tl",  data_dir + "/train.labels",
 			"--vd", data_dir + "/dev.data", "--vl", data_dir + "/dev.labels",
 			"--model_save_dir", odir]
 
@@ -98,16 +98,18 @@ def run_code(all_args, curr_values, data_dir, name, curr_index, gpu):
 
 	HOSTNAME = os.environ['HOSTNAME'] if 'HOSTNAME' in os.environ else ''
 
+	cmd = " ".join(args)
 	if HOSTNAME.endswith('.stampede2.tacc.utexas.edu'):
-		f = gen_cluster_file(s, " ".join(args))
+		f = gen_cluster_file(s, cmd)
 
-		call(['sbatch', f])
+		os.system('sbatch' + f)
 	else:
 		if gpu != None:
 			os.environ['CUDA_VISIBLE_DEVICES'] = gpu
-			args.append('-g')
+			cmd += ' -g'
 
-		call(['python', '-u', 'soft_patterns.py'] + args)
+		print(cmd)
+		os.system(cmd+" |& tee "+model_dir+'logs/'+s+".real.out")
 
 
 def	gen_cluster_file(s, com):
@@ -126,7 +128,7 @@ def	gen_cluster_file(s, com):
 		ofh.write("#SBATCH --mail-type=ALL\n")
 		ofh.write("#SBATCH -A TG-DBS110003       # project/allocation number;\n")
 		ofh.write("source activate torch3\n")
-		ofh.write("mpirun python -u soft_patterns.py " + com + "\n")
+		ofh.write("mpirun " + com + "\n")
 
 	return f
 
