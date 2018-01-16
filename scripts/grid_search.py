@@ -20,6 +20,7 @@ n_dirs=len(dirs)
 WORK = os.environ['HOME']
 model_dir = WORK + "/work/soft_patterns/"
 resource_dir = WORK + "/resources/"
+git_tag = os.system('git log | head -n 1 | cut -d " " -f2 | cut -b -7')
 
 
 def main(args):
@@ -109,7 +110,7 @@ def run_code(all_args, curr_values, data_dir, name, curr_index, gpu):
 			cmd += ' -g'
 
 		print(cmd)
-		os.system(cmd+" |& tee "+model_dir+'logs/'+s+".real.out")
+		os.system(cmd+" |& tee "+model_dir+'logs/'+s + '_' + git_tag + ".real.out")
 
 
 def	gen_cluster_file(s, com):
@@ -119,7 +120,7 @@ def	gen_cluster_file(s, com):
 	with open(f, 'w') as ofh:
 		ofh.write("#!/usr/bin/env bash\n")
 		ofh.write("#SBATCH -J "+s+"\n")
-		ofh.write("#SBATCH -o " + model_dir + "/logs/" + s + ".out\n")
+		ofh.write("#SBATCH -o " + model_dir + "/logs/" + s + '_' + git_tag + ".out\n")
 		ofh.write("#SBATCH -p normal\n")  # specify queue
 		ofh.write("#SBATCH -N 1\n")  # Number of nodes, not cores (16 cores/node)
 		ofh.write("#SBATCH -n 1\n")
