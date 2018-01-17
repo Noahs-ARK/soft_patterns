@@ -147,6 +147,7 @@ class SoftPatternClassifier(Module):
                  rnn=None,
                  pre_computed_patterns=None,
                  no_sl=False,
+                 shared_sl=False,
                  no_eps=False):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
@@ -166,15 +167,26 @@ class SoftPatternClassifier(Module):
             self.word_dim = self.rnn.num_directions * self.rnn.hidden_dim
         self.num_diags = 1  # self-loops and single-forward-steps
         self.no_sl = no_sl
-        if not self.no_sl:
-            self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
-            self.num_diags = 2
+        self.shared_sl = shared_sl
 
         self.pattern_specs = pattern_specs
         self.max_pattern_length = max(list(pattern_specs.keys()))
 
-
         self.no_eps = no_eps
+
+        if self.shared_sl is not None:
+            # Shared parameters between main path and self loop.
+            # 1 -- one parameter per state per pattern
+            # 2 -- a single global parameter
+            if self.shared_sl == 1:
+                shared_sl_data = randn(self.total_num_patterns, self.max_pattern_length)
+            else:
+                shared_sl_data = randn(1)
+
+            self.self_loop_scale = Parameter(self.semiring.from_float(self.to_cuda(shared_sl_data)))
+        elif not self.no_sl:
+            self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
+            self.num_diags = 2
 
         # end state index for each pattern
         end_states = [
@@ -223,6 +235,7 @@ class SoftPatternClassifier(Module):
             ]
             batched_transition_scores = torch.cat(batched_transition_scores).view(
                 b, n, self.total_num_patterns, self.num_diags, self.max_pattern_length)
+
         else:
             # run an RNN to get the word vectors to input into our soft-patterns
             outs = self.rnn.forward(batch, dropout=dropout)
@@ -410,15 +423,18 @@ class SoftPatternClassifier(Module):
         if self.no_sl:
             return happy_paths
         else:
+            self_loop_scale = self.self_loop_scale.expand(transition_matrix_val[:, :, 0, :].size()) \
+                if self.shared_sl else self.self_loop_scale
+
             if self.no_eps:
                 self_loops = self.semiring.times(
-                    self.self_loop_scale,
+                    self_loop_scale,
                     transition_matrix_val[:, :, 0, :]
                 )
             else:
                 # Adding self loops (consume a token, stay in same state)
                 self_loops = self.semiring.times(
-                    self.self_loop_scale,
+                    self_loop_scale,
                     self.semiring.times(
                         epsilons,
                         transition_matrix_val[:, :, 0, :]
@@ -698,6 +714,7 @@ def main(args):
                                   rnn,
                                   pre_computed_patterns,
                                   args.no_sl,
+                                  args.shared_sl,
                                   args.no_eps)
 
     if args.gpu:
@@ -785,6 +802,7 @@ def training_arg_parser():
     p.add_argument("-m", "--model_save_dir", help="where to save the trained model")
     p.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
     p.add_argument("--no_sl", help="Don't use self loops", action='store_true')
+    p.add_argument("--shared_sl", help="Share main path and self loop parameters, where self loops are discounted by a self_loop_parameter. 1: one parameter per state per pattern, 2: a global parameter.", type=int, default=None)
     p.add_argument("--no_eps", help="Don't use epsilon transitions", action='store_true')
     p.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
     p.add_argument("--input_model", help="Input model (to run test and not train)")
