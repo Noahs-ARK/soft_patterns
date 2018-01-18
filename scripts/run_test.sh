@@ -71,8 +71,9 @@ if [ $model -eq 0 ]; then
     rnn=$(get_param ${f} use_rnn)
     no_sl=$(get_param ${f} no_sl)
     no_eps=$(get_param ${f} no_eps)
+    shared_sl=$(get_param ${f} shared_sl)
 
-    s="$patterns $maxplus $maxtimes $no_sl $no_eps"
+    s="$patterns $maxplus $maxtimes $no_sl $no_eps $shared_sl"
 elif [ $model -eq 1 ]; then
     s="--dan"
 elif [ $model -eq 2 ]; then
