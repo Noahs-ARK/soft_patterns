@@ -39,7 +39,7 @@ def main(args):
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
 
-    if args.dan or args.bilstm:
+    if args.dan or args.bilstm or args.cnn:
         num_padding_tokens = 1
     else:
         pattern_specs = OrderedDict(sorted(([int(y) for y in x.split("-")] for x in args.patterns.split("_")),

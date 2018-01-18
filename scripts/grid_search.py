@@ -3,7 +3,7 @@
 import sys
 import os
 import copy
-from subprocess import call
+import subprocess
 from operator import mul
 from random import shuffle
 from operator import mul
@@ -20,7 +20,6 @@ n_dirs=len(dirs)
 WORK = os.environ['HOME']
 model_dir = WORK + "/work/soft_patterns/"
 resource_dir = WORK + "/resources/"
-git_tag = os.system('git log | head -n 1 | cut -d " " -f2 | cut -b -7')
 
 
 def main(args):
@@ -81,7 +80,7 @@ def recursive_run_code(all_args, curr_param_index, curr_index, curr_values, data
 
 def run_code(all_args, curr_values, data_dir, name, curr_index, gpu):
 	# print("Running", name, "with args", curr_values)
-
+	git_tag = os.popen('git log | head -n 1 | cut -d " " -f2 | cut -b -7').read()
 
 	s = name + "." + str(curr_index)
 	odir =  model_dir + "/output_"+s

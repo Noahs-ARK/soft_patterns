@@ -185,7 +185,7 @@ class SoftPatternClassifier(Module):
 
             self.self_loop_scale = Parameter(self.to_cuda(shared_sl_data))
         elif not self.no_sl:
-            self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
+            self.self_loop_scale = self.to_cuda(self.semiring.from_float(fixed_var(semiring.one(1))))
             self.num_diags = 2
 
         # end state index for each pattern

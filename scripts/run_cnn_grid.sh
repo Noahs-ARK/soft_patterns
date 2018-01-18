@@ -48,7 +48,7 @@ function gen_cluster_file {
     echo ${f}
 }
 
-n=486
+n=162
 ind=($(seq 0 $n | sort -R))
 
 ind2=($(seq 0 $n))
@@ -68,13 +68,14 @@ done
 git_tag=$(git log | head -n1 | awk '{print $NF}'| cut -b -7)
 
 i=-1
-for lr in 0.05 0.01 0.005; do
+for lr in 0.01; do
 	for t in 0 0.05 0.1; do
-		for d in 10 25 50; do
-		    for h in 25 50 75 100 200 300; do
+		for d in 25 50; do
+		    for h in 50 100 200; do
 		        for z in 4 5 6; do
+		        	for c in 1 2 5; do
                     let i++
-                    s=cnn_l${lr}_t${t}_d${d}_h${h}_z${z}_${dataset}_$git_tag
+                    s=cnn_l${lr}_t${t}_d${d}_h${h}_z${z}_c${c}_${dataset}_$git_tag
                     local_d=$m/$s
                     if [ -d $local_d ]; then
                         echo "$local_d found!"
@@ -82,6 +83,7 @@ for lr in 0.05 0.01 0.005; do
 #                        echo $i randomed out
 			kk=22
                     else
+			echo running $i
                         mkdir -p  $local_d
                         com="python -u baselines/cnn.py \
                             --td $td \
@@ -98,6 +100,7 @@ for lr in 0.05 0.01 0.005; do
                             -r \
                             -x 1 \
                             -z $z \
+			    --clip $c\
                             -e $e"
                         echo $com
                         if [[ "$HOSTNAME" == *.stampede2.tacc.utexas.edu ]]; then
@@ -112,6 +115,7 @@ for lr in 0.05 0.01 0.005; do
                         fi
 		    fi
                 done
+		done
             done
         done
     done

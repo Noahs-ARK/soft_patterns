@@ -27,7 +27,7 @@ def main(args):
     files = glob.glob(s)
 
     if len(files) == 0:
-        print("No files found for", s)
+        print("No files found for {} with regexp {}".format(prefix, s))
         return -2
 
     params = get_params(param_file)

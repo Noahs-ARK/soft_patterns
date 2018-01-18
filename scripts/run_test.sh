@@ -5,7 +5,7 @@ set -e
 model_num=-1
 
 if [ "$#" -lt 6 ]; then
-    echo "Usage: $0 <output file> <model: 0 for soft_patterns, 1 for dan, 2 for lstm> <model number (or -1 for best)> <test data> <test labels> <gpu num (or -1)>"
+    echo "Usage: $0 <output file> <model: 0 for soft_patterns, 1 for dan, 2 for lstm, 3 for cn> <model number (or -1 for best)> <test data> <test labels> <gpu num (or -1)>"
     exit -1
 fi
 

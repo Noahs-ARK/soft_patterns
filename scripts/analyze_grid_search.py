@@ -6,8 +6,6 @@ import os.path
 import glob
 import numpy as np
 
-home = os.environ.get('HOME')
-workdir=home+"/work/soft_patterns/"
 
 def add_val(res, index, odict):
     v = res.group(index)
@@ -19,75 +17,77 @@ def add_val(res, index, odict):
     return v
 
 def main(args):
+    home = os.environ.get('HOME')
+    workdir=home+"/work/soft_patterns/"
     type = 0
     if len(args) < 2:
-        print("Usage:",args[0],"<dataset name> <type (0 for accuracy [default], 1 for loss)>")
+        print("Usage:",args[0],"<dataset name> <type (0 for accuracy [default], 1 for loss)> <workdir ="+workdir+">")
         return -1
     elif len(args) > 2:
         type = int(args[2])
+        if len(args) > 3:
+            workdir = args[3]
 
     dataset = args[1]
 
-    s=workdir+'/'+'output_p*_d*_l*_t*_r_mt_b150_clip0_840B.300d_w*_'+dataset+'_seed*_*/output.dat'
+#    s=workdir+'/'+'output_p*_d*_l*_t*_r_mt_b150_clip0_840B.300d_w*_'+dataset+'_seed*_*/output.dat'
+    s=workdir+'/'+'*'+dataset+'*'
     files = glob.glob(s)
 
     if len(files) == 0:
         print("No files found for", dataset)
         return -2
 
-    ps = dict()
     ls = dict()
     ts = dict()
     ds = dict()
-    ss = dict()
-    ws = dict()
-    bs = dict()
-    reg = re.compile("output_p(.*)_d([0-9]+)_l([0-9\.]+)_t([0-9\.]+)_r_mt_b150_clip0_840B\.300d_w([0-9\.]+)_"+dataset+'_seed(\d+)(:?_bh([0-9]+))?_\w+')
+    hs = dict()
+    zs = dict()
+    cs = dict()
+    reg = re.compile(".*_l([0-9\.]+)_t([0-9\.]+)_d([0-9]+)_h([0-9]+)_z([0-9]+)_c([0-9\.])_"+dataset+'.+')
+    #reg = re.compile(".*_l([0-9\\.]+)")
 
     global_best = None
     global_best_val = -1 if type == 0 else 1000
 
     for f in files:
-        fname = f.split("/")[-2]
+        fname = f.split("/")[-1]
         res = reg.match(fname)
 
         if res is None:
-            print(fname,"doesn't match regexp")
+            print(fname,"doesn't match regexp",reg)
             return
 
         best = get_top(f, type)
 
         if best != -1:
-            p = add_val(res, 1, ps)
-            d = add_val(res, 2, ds)
-            l = add_val(res, 3, ls)
-            t = add_val(res, 4, ts)
-            w = add_val(res, 5, ws)
-            s = add_val(res, 6, ss)
-            b = add_val(res, 7, bs)
+            l = add_val(res, 1, ls)
+            t = add_val(res, 2, ts)
+            d = add_val(res, 3, ds)
+            h = add_val(res, 4, hs)
+            z = add_val(res, 5, zs)
+            c = add_val(res, 6, cs)
 
-            if b is None:
+            if c is None:
                 continue
 
             if best > global_best_val and type == 0 or (best < global_best_val and type == 1):
                 global_best = f
                 global_best_val = best
 
-            ps[p].append(best)
-            ds[d].append(best)
             ls[l].append(best)
             ts[t].append(best)
-            ws[w].append(best)
-            ss[s].append(best)
-            bs[b].append(best)
+            ds[d].append(best)
+            hs[h].append(best)
+            zs[z].append(best)
+            cs[c].append(best)
 
-    analyze("patterns", ps, type)
     analyze("learning rate", ls, type)
     analyze("dropout", ts, type)
     analyze("dimension", ds, type)
-    analyze("seed", ss, type)
-    analyze("word dropout", ws, type)
-    analyze("rnn hidden dim", bs, type)
+    analyze("hidden dimensions", hs, type)
+    analyze("window size", zs, type)
+    analyze("gradient clip", cs, type)
 
     print("Overall best: {} ({})".format(global_best_val, global_best))
     return 0
