@@ -22,12 +22,12 @@ def main(args):
     prefix = args[1]
     param_file = args[2]
 
-    s=workdir + prefix + '*.out'
+    s=workdir + prefix + '*'
 
     files = glob.glob(s)
 
     if len(files) == 0:
-        print("No files found for", prefix)
+        print("No files found for", s)
         return -2
 
     params = get_params(param_file)
@@ -76,6 +76,9 @@ def get_local_params(params, f, v):
             e[1] = e[1][1:-1]
 
         if e[0] in params:
+            if e[1] not in params[e[0]]:
+                params[e[0]][e[1]] = []
+    
             params[e[0]][e[1]].append(v)
 
 def analyze(local_params, type):
