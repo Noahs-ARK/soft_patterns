@@ -183,7 +183,7 @@ class SoftPatternClassifier(Module):
             else:
                 shared_sl_data = randn(1)
 
-            self.self_loop_scale = Parameter(self.semiring.from_float(self.to_cuda(shared_sl_data)))
+            self.self_loop_scale = Parameter(self.to_cuda(shared_sl_data))
         elif not self.no_sl:
             self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
             self.num_diags = 2
@@ -330,6 +330,13 @@ class SoftPatternClassifier(Module):
         transition_matrices = self.get_transition_matrices(batch, dropout)
         time2 = monotonic()
 
+        self_loop_scale = None
+
+        if self.shared_sl:
+            self_loop_scale = self.semiring.from_float(self.self_loop_scale)
+        elif not self.no_sl:
+            self_loop_scale = self.self_loop_scale
+
         batch_size = batch.size()
         num_patterns = self.total_num_patterns
         scores = self.to_cuda(fixed_var(self.semiring.zero(batch_size, num_patterns)))
@@ -355,7 +362,8 @@ class SoftPatternClassifier(Module):
                                            hiddens,
                                            transition_matrix,
                                            zero_padding,
-                                           restart_padding)
+                                           restart_padding,
+                                           self_loop_scale)
             if debug % 4 == 3:
                 all_hiddens.append(hiddens[0, :, :])
 
@@ -393,7 +401,8 @@ class SoftPatternClassifier(Module):
                         hiddens,
                         transition_matrix_val,
                         zero_padding,
-                        restart_padding):
+                        restart_padding,
+                        self_loop_scale):
         # Adding epsilon transitions (don't consume a token, move forward one state)
         # We do this before self-loops and single-steps.
         # We only allow zero or one epsilon transition in a row.
@@ -423,8 +432,8 @@ class SoftPatternClassifier(Module):
         if self.no_sl:
             return happy_paths
         else:
-            self_loop_scale = self.self_loop_scale.expand(transition_matrix_val[:, :, 0, :].size()) \
-                if self.shared_sl else self.self_loop_scale
+            self_loop_scale = self_loop_scale.expand(transition_matrix_val[:, :, 0, :].size()) \
+                if self.shared_sl else self_loop_scale
 
             if self.no_eps:
                 self_loops = self.semiring.times(
