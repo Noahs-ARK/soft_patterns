@@ -174,14 +174,13 @@ class SoftPatternClassifier(Module):
 
         self.no_eps = no_eps
 
-        if self.shared_sl is not None:
-            # Shared parameters between main path and self loop.
-            # 1 -- one parameter per state per pattern
-            # 2 -- a single global parameter
-            if self.shared_sl == 1:
-                shared_sl_data = randn(self.total_num_patterns, self.max_pattern_length)
-            else:
-                shared_sl_data = randn(1)
+        # Shared parameters between main path and self loop.
+        # 1 -- one parameter per state per pattern
+        # 2 -- a single global parameter
+        if self.shared_sl == 1:
+            shared_sl_data = randn(self.total_num_patterns, self.max_pattern_length)
+        elif self.shared_sl == 2:
+            shared_sl_data = randn(1)
 
             self.self_loop_scale = Parameter(self.to_cuda(shared_sl_data))
         elif not self.no_sl:
@@ -811,7 +810,7 @@ def training_arg_parser():
     p.add_argument("-m", "--model_save_dir", help="where to save the trained model")
     p.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
     p.add_argument("--no_sl", help="Don't use self loops", action='store_true')
-    p.add_argument("--shared_sl", help="Share main path and self loop parameters, where self loops are discounted by a self_loop_parameter. 1: one parameter per state per pattern, 2: a global parameter.", type=int, default=None)
+    p.add_argument("--shared_sl", help="Share main path and self loop parameters, where self loops are discounted by a self_loop_parameter. 1: one parameter per state per pattern, 2: a global parameter.", type=int, default=0)
     p.add_argument("--no_eps", help="Don't use epsilon transitions", action='store_true')
     p.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
     p.add_argument("--input_model", help="Input model (to run test and not train)")
