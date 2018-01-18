@@ -78,8 +78,13 @@ elif [ $model -eq 1 ]; then
     s="--dan"
 elif [ $model -eq 2 ]; then
     s="--bilstm"
+elif [ $model -eq 3 ]; then
+    num_cnn_layers=$(get_param ${f} num_cnn_layers)
+    cnn_hidden_dim=$(get_param ${f} cnn_hidden_dim)
+    window_size=$(get_param ${f} window_size)
+    s="--cnn $num_cnn_layers $cnn_hidden_dim $window_size"
 else
-    echo "Model not found (should be 0, 1 or 2. Got $model"
+    echo "Model not found (should be 0, 1 or 3. Got $model"
     exit -3
 fi
 

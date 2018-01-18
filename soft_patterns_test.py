@@ -4,6 +4,7 @@ Script to evaluate the accuracy of a model.
 """
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
+from baselines.cnn import PooledCnnClassifier, max_pool_seq, cnn_arg_parser
 from baselines.dan import DanClassifier
 from baselines.lstm import AveragingRnnClassifier
 import sys
@@ -70,6 +71,16 @@ def main(args):
                                        embeddings,
                                        cell_type=cell_type,
                                        gpu=args.gpu)
+    elif args.cnn:
+        model = PooledCnnClassifier(args.window_size,
+            args.num_cnn_layers,
+            args.cnn_hidden_dim,
+            num_mlp_layers,
+            mlp_hidden_dim,
+            num_classes,
+            embeddings,
+            pooling=max_pool_seq,
+            gpu=args.gpu)
     else:
         semiring = \
             MaxPlusSemiring if args.maxplus else (
@@ -104,8 +115,9 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser(description=__doc__,
                             formatter_class=ArgumentDefaultsHelpFormatter,
-                            parents=[soft_pattern_arg_parser(), training_arg_parser()])
+                            parents=[soft_pattern_arg_parser(), training_arg_parser(), cnn_arg_parser()])
     parser.add_argument("--dan", help="Dan classifier", action='store_true')
+    parser.add_argument("--cnn", help="CNN classifier", action='store_true')
     parser.add_argument("--bilstm", help="BiLSTM classifier", action='store_true')
 
     sys.exit(main(parser.parse_args()))
