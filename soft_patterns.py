@@ -177,10 +177,11 @@ class SoftPatternClassifier(Module):
         # Shared parameters between main path and self loop.
         # 1 -- one parameter per state per pattern
         # 2 -- a single global parameter
-        if self.shared_sl == 1:
-            shared_sl_data = randn(self.total_num_patterns, self.max_pattern_length)
-        elif self.shared_sl == 2:
-            shared_sl_data = randn(1)
+        if self.shared_sl > 0:
+            if self.shared_sl == 1:
+                shared_sl_data = randn(self.total_num_patterns, self.max_pattern_length)
+            elif self.shared_sl == 2:
+                shared_sl_data = randn(1)
 
             self.self_loop_scale = Parameter(self.to_cuda(shared_sl_data))
         elif not self.no_sl:
