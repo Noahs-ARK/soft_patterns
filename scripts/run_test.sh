@@ -24,7 +24,7 @@ function get_param {
 
     val=$(head -1 ${f} | tr ' ' '\n' | grep -E "\b${name}=" | cut -d '=' -f2 | tr -d "'()" | sed 's/,$//')
 
-    if [ -z $val ] || [ $val == 'False' ]; then
+    if [ -z $val ] || [ $val == 'False' ] || [ $val == 'None' ]; then
 	echo ""
     elif [ $val == 'True' ]; then 
 	echo "--$name"
