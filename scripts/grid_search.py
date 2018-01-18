@@ -39,7 +39,7 @@ def main(args):
 	n_instances = int(args[3])
 	file_name = args[2]
 
-	name = ddir+'_'+".".join(file_name.split("/")[-1].split(".")[:-1]).split("_")[-1] 
+	name = ddir+'_'+".".join(file_name.split("/")[-1].split(".")[:-1])
 	with open(file_name) as ifh:
 		all_args = [l.rstrip().split() for l in ifh]
 
