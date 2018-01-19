@@ -39,8 +39,10 @@ def main(args):
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
 
-    if args.dan or args.bilstm or args.cnn:
+    if args.dan or args.bilstm:
         num_padding_tokens = 1
+    elif args.cnn:
+        num_padding_tokens = args.window_size - 1
     else:
         pattern_specs = OrderedDict(sorted(([int(y) for y in x.split("-")] for x in args.patterns.split("_")),
                                            key=lambda t: t[0]))
