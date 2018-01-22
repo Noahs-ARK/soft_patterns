@@ -185,7 +185,7 @@ class SoftPatternClassifier(Module):
 
             self.self_loop_scale = Parameter(self.to_cuda(shared_sl_data))
         elif not self.no_sl:
-            self.self_loop_scale = self.to_cuda(self.semiring.from_float(fixed_var(semiring.one(1))))
+            self.self_loop_scale = self.to_cuda(fixed_var(semiring.one(1)))
             self.num_diags = 2
 
         # end state index for each pattern
@@ -407,12 +407,9 @@ class SoftPatternClassifier(Module):
         # We do this before self-loops and single-steps.
         # We only allow zero or one epsilon transition in a row.
         if self.no_eps:
-            happy_paths = \
-                cat((restart_padding,  # <- Adding the start state
-                         transition_matrix_val[:, :, -1, :-1]),
-                    2)
+            after_epsilons = hiddens
         else:
-            epsilons = \
+            after_epsilons = \
                 self.semiring.plus(
                     hiddens,
                     cat((zero_padding,
@@ -422,35 +419,29 @@ class SoftPatternClassifier(Module):
                          )), 2)
                 )
 
-            happy_paths = \
-                cat((restart_padding,  # <- Adding the start state
-                     self.semiring.times(
-                         epsilons[:, :, :-1],
-                         transition_matrix_val[:, :, -1, :-1])
-                     ), 2)
+        after_main_paths = \
+            cat((restart_padding,  # <- Adding the start state
+                 self.semiring.times(
+                     after_epsilons[:, :, :-1],
+                     transition_matrix_val[:, :, -1, :-1])
+                 ), 2)
 
         if self.no_sl:
-            return happy_paths
+            return after_main_paths
         else:
             self_loop_scale = self_loop_scale.expand(transition_matrix_val[:, :, 0, :].size()) \
                 if self.shared_sl else self_loop_scale
 
-            if self.no_eps:
-                self_loops = self.semiring.times(
-                    self_loop_scale,
+            # Adding self loops (consume a token, stay in same state)
+            after_self_loops = self.semiring.times(
+                self_loop_scale,
+                self.semiring.times(
+                    after_epsilons,
                     transition_matrix_val[:, :, 0, :]
                 )
-            else:
-                # Adding self loops (consume a token, stay in same state)
-                self_loops = self.semiring.times(
-                    self_loop_scale,
-                    self.semiring.times(
-                        epsilons,
-                        transition_matrix_val[:, :, 0, :]
-                    )
-                )
+            )
             # either happy or self-loop, not both
-            return self.semiring.plus(happy_paths, self_loops)
+            return self.semiring.plus(after_main_paths, after_self_loops)
 
     def predict(self, batch, debug=0):
         output = self.forward(batch, debug).data
