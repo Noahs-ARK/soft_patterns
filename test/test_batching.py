@@ -2,6 +2,8 @@
 
 import sys; sys.path.append(".")
 from baselines.cnn import PooledCnnClassifier
+from baselines.dan import DanClassifier
+from baselines.lstm import AveragingRnnClassifier
 from soft_patterns import Batch, SoftPatternClassifier, read_docs, read_embeddings
 from util import to_cuda
 import unittest
@@ -9,7 +11,8 @@ import numpy as np
 import torch
 
 from test.settings import EMBEDDINGS_FILENAME, DATA_FILENAME, PATTERN_SPECS, MLP_HIDDEN_DIM, \
-    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, WINDOW_SIZE, NUM_CNN_LAYERS, CNN_HIDDEN_DIM
+    NUM_MLP_LAYERS, NUM_CLASSES, SEMIRING, GPU, WINDOW_SIZE, NUM_CNN_LAYERS, CNN_HIDDEN_DIM, \
+    LSTM_HIDDEN_DIM
 from util import chunked_sorted
 
 torch.manual_seed(100)
@@ -40,6 +43,21 @@ class TestBatching(unittest.TestCase):
                 CNN_HIDDEN_DIM,
                 NUM_MLP_LAYERS,
                 MLP_HIDDEN_DIM,
+                NUM_CLASSES,
+                embeddings,
+                gpu=GPU
+            ),
+            DanClassifier(
+                MLP_HIDDEN_DIM,
+                NUM_MLP_LAYERS,
+                NUM_CLASSES,
+                embeddings,
+                gpu=GPU
+            ),
+            AveragingRnnClassifier(
+                LSTM_HIDDEN_DIM,
+                MLP_HIDDEN_DIM,
+                NUM_MLP_LAYERS,
                 NUM_CLASSES,
                 embeddings,
                 gpu=GPU
