@@ -23,7 +23,7 @@ example usage:
 
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import sys; sys.path.append(".")
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.functional import relu
 from soft_patterns import train, training_arg_parser
 import numpy as np
@@ -35,11 +35,13 @@ from data import read_embeddings, read_docs, read_labels, vocab_from_text
 from mlp import MLP, mlp_arg_parser
 from util import to_cuda
 
+NEG_INF = float("-inf")
+
 
 def max_pool_seq(packed_seq):
     """ Given a PackedSequence, max-pools each sequence in the batch. """
     # unpack
-    padded, _ = pad_packed_sequence(packed_seq)  # size: (max_doc_len, batch_size, *hidden_dims)
+    padded, _ = pad_packed_sequence(packed_seq, padding_value=NEG_INF)  # size: (max_doc_len, batch_size, *hidden_dims)
     # max-pool each doc
     maxes, _ = torch.max(padded, dim=0)  # size: (batch_size, *hidden_dims)
     return maxes
@@ -65,6 +67,57 @@ def average_pool_seq(packed_seq):
             sums,
             Variable(torch.FloatTensor(lens).view(b, 1)).expand(*sums.size())
         )
+
+
+# copy-pasted from torch/nn/utils/rnn.py, added parameter for default padding
+def pad_packed_sequence(sequence, batch_first=False, padding_value=None):
+    """Pads a packed batch of variable length sequences.
+
+    It is an inverse operation to :func:`pack_padded_sequence`.
+
+    The returned Variable's data will be of size TxBx*, where T is the length
+    of the longest sequence and B is the batch size. If ``batch_first`` is True,
+    the data will be transposed into BxTx* format.
+
+    Batch elements will be ordered decreasingly by their length.
+
+    Arguments:
+        sequence (PackedSequence): batch to pad
+        batch_first (bool, optional): if True, the output will be in BxTx*
+            format.
+        padding_value (float, optional): the value with which to pad shorter
+            sequences in the batch (default is 0).
+
+    Returns:
+        Tuple of Variable containing the padded sequence, and a list of lengths
+        of each sequence in the batch.
+    """
+    var_data, batch_sizes = sequence
+    max_batch_size = batch_sizes[0]
+    output = var_data.data.new(len(batch_sizes), max_batch_size, *var_data.size()[1:])
+    if padding_value is not None:
+        output.fill_(padding_value)
+    else:
+        output.zero_()
+    output = Variable(output)
+
+    lengths = []
+    data_offset = 0
+    prev_batch_size = batch_sizes[0]
+    for i, batch_size in enumerate(batch_sizes):
+        output[i, :batch_size] = var_data[data_offset:data_offset + batch_size]
+        data_offset += batch_size
+
+        dec = prev_batch_size - batch_size
+        if dec > 0:
+            lengths.extend((i,) * dec)
+        prev_batch_size = batch_size
+    lengths.extend((i + 1,) * batch_size)
+    lengths.reverse()
+
+    if batch_first:
+        output = output.transpose(0, 1)
+    return output, lengths
 
 
 class Cnn(Module):
