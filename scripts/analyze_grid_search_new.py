@@ -75,7 +75,10 @@ def get_local_params(params, f, v):
             e[1] = e[1][1:-1]
 
         if e[0] not in params:
-            e[0] = dict()
+            if e[0] == 'model_save_dir':
+                continue
+
+            params[e[0]] = dict()
 
         if e[1] not in params[e[0]]:
             params[e[0]][e[1]] = []
@@ -84,10 +87,10 @@ def get_local_params(params, f, v):
 
 def analyze(local_params, type):
     for name in local_params:
-        print(name+":")
-
         if (len(local_params[name]) == 1):
             continue
+
+        print(name+":")
 
         for k,v in local_params[name].items():
             if len(v):
