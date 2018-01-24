@@ -11,16 +11,15 @@ def main(args):
     home = os.environ.get('HOME')
     workdir=home+"/work/soft_patterns/logs/"
     type = 0
-    if len(args) < 3:
-        print("Usage:",args[0],"<prefix> <param file> <type (0 for accuracy [default], 1 for loss)> <work_dir = "+workdir+">")
+    if len(args) < 2:
+        print("Usage:",args[0],"<prefix> <type (0 for accuracy [default], 1 for loss)> <work_dir = "+workdir+">")
         return -1
-    elif len(args) > 3:
-        type = int(args[3])
-        if len(args) > 4:
-             workdir = args[4]
+    elif len(args) > 2:
+        type = int(args[2])
+        if len(args) > 3:
+             workdir = args[3]
 
     prefix = args[1]
-    param_file = args[2]
 
     s=workdir + prefix + '*'
 
@@ -30,7 +29,7 @@ def main(args):
         print("No files found for {} with regexp {}".format(prefix, s))
         return -2
 
-    params = get_params(param_file)
+    params = dict()
 
     global_best = None
     global_best_val = -1 if type == 0 else 1000
@@ -75,15 +74,20 @@ def get_local_params(params, f, v):
         if e[1][0] == "'":
             e[1] = e[1][1:-1]
 
-        if e[0] in params:
-            if e[1] not in params[e[0]]:
-                params[e[0]][e[1]] = []
+        if e[0] not in params:
+            e[0] = dict()
+
+        if e[1] not in params[e[0]]:
+            params[e[0]][e[1]] = []
     
-            params[e[0]][e[1]].append(v)
+        params[e[0]][e[1]].append(v)
 
 def analyze(local_params, type):
     for name in local_params:
         print(name+":")
+
+        if (len(local_params[name]) == 1):
+            continue
 
         for k,v in local_params[name].items():
             if len(v):
