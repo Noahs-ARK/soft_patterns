@@ -97,6 +97,8 @@ LogSpaceMaxTimesSemiring = \
         torch.exp
     )
 
+SHARED_SL_PARAM_PER_STATE_PER_PATTERN = 1
+SHARED_SL_SINGLE_PARAM = 2
 
 class Batch:
     """
@@ -178,9 +180,9 @@ class SoftPatternClassifier(Module):
         # 1 -- one parameter per state per pattern
         # 2 -- a single global parameter
         if self.shared_sl > 0:
-            if self.shared_sl == 1:
+            if self.shared_sl == SHARED_SL_PARAM_PER_STATE_PER_PATTERN:
                 shared_sl_data = randn(self.total_num_patterns, self.max_pattern_length)
-            elif self.shared_sl == 2:
+            elif self.shared_sl == SHARED_SL_SINGLE_PARAM:
                 shared_sl_data = randn(1)
 
             self.self_loop_scale = Parameter(self.to_cuda(shared_sl_data))
@@ -430,7 +432,7 @@ class SoftPatternClassifier(Module):
             return after_main_paths
         else:
             self_loop_scale = self_loop_scale.expand(transition_matrix_val[:, :, 0, :].size()) \
-                if self.shared_sl else self_loop_scale
+                if self.shared_sl == SHARED_SL_PARAM_PER_STATE_PER_PATTERN else self_loop_scale
 
             # Adding self loops (consume a token, stay in same state)
             after_self_loops = self.semiring.times(
@@ -802,7 +804,11 @@ def training_arg_parser():
     p.add_argument("-m", "--model_save_dir", help="where to save the trained model")
     p.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
     p.add_argument("--no_sl", help="Don't use self loops", action='store_true')
-    p.add_argument("--shared_sl", help="Share main path and self loop parameters, where self loops are discounted by a self_loop_parameter. 1: one parameter per state per pattern, 2: a global parameter.", type=int, default=0)
+    p.add_argument("--shared_sl",
+                   help="Share main path and self loop parameters, where self loops are discounted by a self_loop_parameter. "+
+                           str(SHARED_SL_PARAM_PER_STATE_PER_PATTERN)+
+                           ": one parameter per state per pattern, "+str(SHARED_SL_SINGLE_PARAM)+
+                           ": a global parameter.", type=int, default=0)
     p.add_argument("--no_eps", help="Don't use epsilon transitions", action='store_true')
     p.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
     p.add_argument("--input_model", help="Input model (to run test and not train)")
