@@ -35,11 +35,13 @@ def main(args):
     global_best_val = -1 if type == 0 else 1000
 
     n_files = 0
+    all_vals = []
     for f in files:
         best = get_top(f, type)
 
         if best != -1:
             n_files += 1
+            all_vals.append(best)
             get_local_params(params, f, best)
 
             if best > global_best_val and type == 0 or (best < global_best_val and type == 1):
@@ -48,7 +50,7 @@ def main(args):
 
     analyze(params, type)
 
-    print("Overall best across {} files: {} ({})".format(n_files, global_best_val, global_best))
+    print("Overall best across {} files: {} ({}). Mean value is {}".format(n_files, global_best_val, global_best, round(np.mean(all_vals), 3)))
     return 0
 
 def get_params(param_file):
@@ -94,7 +96,7 @@ def analyze(local_params, type):
 
         for k,v in local_params[name].items():
             if len(v):
-                print("\t{}: {}: {:,.3f}, Mean: {:,.3f} {}".format(k, "Max" if type == 0 else "Min", np.max(v) if type == 0 else np.min(v), np.mean(v), len(v)))
+                print("\t{}: {}: {:,.3f}, Mean: {:,.3f} {}".format(k, "Max" if type == 0 else "Min", np.max(v) if type == 0 else np.min(v), round(np.mean(v),3), len(v)))
             else:
                 print("\t",k,"No files")
 
