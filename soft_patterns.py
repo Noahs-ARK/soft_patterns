@@ -224,6 +224,16 @@ class SoftPatternClassifier(Module):
 
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
+    ### Adapted from AllenNLP
+    def enable_gradient_clipping(self, clip) -> None:
+        if clip is not None and clip > 0:
+            # Pylint is unable to tell that we're in the case that _grad_clipping is not None...
+            # pylint: disable=invalid-unary-operand-type
+            clip_function = lambda grad: grad.clamp(-clip, clip)
+            for parameter in self.parameters():
+                if parameter.requires_grad:
+                    parameter.register_hook(clip_function)
+
     def get_transition_matrices(self, batch, dropout=None):
         b = batch.size()
         n = batch.max_doc_len
@@ -388,7 +398,7 @@ class SoftPatternClassifier(Module):
         if debug % 4 == 3:
             return self.mlp.forward(scores), transition_matrices, all_hiddens
         elif debug % 4 == 1:
-                return self.mlp.forward(scores), scores
+            return self.mlp.forward(scores), scores
         else:
             return self.mlp.forward(scores)
 
@@ -450,7 +460,7 @@ class SoftPatternClassifier(Module):
         return [int(x) for x in argmax(output)]
 
 
-def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function, gpu=False, clip=None, debug=0, dropout=None):
+def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function, gpu=False, debug=0, dropout=None):
     """Train on one doc. """
     optimizer.zero_grad()
     time0 = monotonic()
@@ -458,8 +468,7 @@ def train_batch(model, batch, num_classes, gold_output, optimizer, loss_function
     time1 = monotonic()
     loss.backward()
     time2 = monotonic()
-    if clip is not None and clip > 0:
-        torch.nn.utils.clip_grad_norm(model.parameters(), clip)
+
     optimizer.step()
     if debug:
         time3 = monotonic()
@@ -522,6 +531,8 @@ def train(train_data,
     optimizer = Adam(model.parameters(), lr=learning_rate)
     loss_function = NLLLoss(None, False)
 
+    model.enable_gradient_clipping(clip)
+
     if dropout:
         dropout = torch.nn.Dropout(dropout)
     else:
@@ -551,7 +562,7 @@ def train(train_data,
             batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu), word_dropout, max_len)
             gold = [x[1] for x in batch]
             loss += torch.sum(
-                train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, clip, debug, dropout)
+                train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, debug, dropout)
             )
             if i % debug_print == (debug_print - 1):
                 print(".", end="", flush=True)
@@ -568,6 +579,14 @@ def train(train_data,
                             writer.add_scalar("gradient_std/" + name,
                                               param.grad.data.std(),
                                               i)
+
+                            # writer.add_histogram("scores", model.scores.data)
+                            # writer.add_scalar("gradient_mean/scores",
+                            #                   model.scores.data.mean(),
+                            #       i)
+                            # writer.add_scalar("gradient_std/scores",
+                            #                   model.scores.data.std(),
+                            #                   i)
                     writer.add_scalar("loss/loss_train", loss, i)
 
             i += 1
@@ -791,6 +810,8 @@ def soft_pattern_arg_parser():
                    help="Use max-times semiring instead of plus-times",
                    default=False, action='store_true')
     return p
+
+
 
 
 def training_arg_parser():
