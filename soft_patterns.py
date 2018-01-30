@@ -157,6 +157,7 @@ class SoftPatternClassifier(Module):
                  embeddings,
                  vocab,
                  semiring,
+                 bias_scale_param,
                  gpu=False,
                  rnn=None,
                  pre_computed_patterns=None,
@@ -187,6 +188,7 @@ class SoftPatternClassifier(Module):
         self.max_pattern_length = max(list(pattern_specs.keys()))
 
         self.no_eps = no_eps
+        self.bias_scale_param = bias_scale_param
 
         # Shared parameters between main path and self loop.
         # 1 -- one parameter per state per pattern
@@ -241,7 +243,7 @@ class SoftPatternClassifier(Module):
         n = batch.max_doc_len
         if self.rnn is None:
             transition_scores = \
-                self.semiring.from_float(mm(self.diags, batch.embeddings_matrix) + self.bias).t()
+                self.semiring.from_float(mm(self.diags, batch.embeddings_matrix) + self.bias_scale_param * self.bias).t()
             if dropout is not None and dropout:
                 transition_scores = dropout(transition_scores)
             batched_transition_scores = [
@@ -260,7 +262,7 @@ class SoftPatternClassifier(Module):
                 padded = dropout(padded)
 
             batched_transition_scores = \
-                self.semiring.from_float(mm(self.diags, padded) + self.bias).t()
+                self.semiring.from_float(mm(self.diags, padded) + self.bias_scale_param * self.bias).t()
 
             if dropout is not None and dropout:
                 batched_transition_scores = dropout(batched_transition_scores)
@@ -727,6 +729,7 @@ def main(args):
                                   embeddings,
                                   vocab,
                                   semiring,
+                                  args.bias_scale_param,
                                   args.gpu,
                                   rnn,
                                   pre_computed_patterns,
@@ -805,6 +808,9 @@ def soft_pattern_arg_parser():
     p.add_argument("--maxtimes",
                    help="Use max-times semiring instead of plus-times",
                    default=False, action='store_true')
+    p.add_argument("--bias_scale_param",
+                   help="Scale bias term by this parameter",
+                   default=0.1, type=float)
     return p
 
 
