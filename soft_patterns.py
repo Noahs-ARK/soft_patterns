@@ -100,6 +100,18 @@ LogSpaceMaxTimesSemiring = \
 SHARED_SL_PARAM_PER_STATE_PER_PATTERN = 1
 SHARED_SL_SINGLE_PARAM = 2
 
+### Adapted from AllenNLP
+def enable_gradient_clipping(model, clip) -> None:
+    if clip is not None and clip > 0:
+        # Pylint is unable to tell that we're in the case that _grad_clipping is not None...
+        # pylint: disable=invalid-unary-operand-type
+        clip_function = lambda grad: grad.clamp(-clip, clip)
+        for parameter in model.parameters():
+            if parameter.requires_grad:
+                parameter.register_hook(clip_function)
+
+
+
 class Batch:
     """
     A batch of documents.
@@ -223,16 +235,6 @@ class SoftPatternClassifier(Module):
 
 
         print("# params:", sum(p.nelement() for p in self.parameters()))
-
-    ### Adapted from AllenNLP
-    def enable_gradient_clipping(self, clip) -> None:
-        if clip is not None and clip > 0:
-            # Pylint is unable to tell that we're in the case that _grad_clipping is not None...
-            # pylint: disable=invalid-unary-operand-type
-            clip_function = lambda grad: grad.clamp(-clip, clip)
-            for parameter in self.parameters():
-                if parameter.requires_grad:
-                    parameter.register_hook(clip_function)
 
     def get_transition_matrices(self, batch, dropout=None):
         b = batch.size()
@@ -531,7 +533,7 @@ def train(train_data,
     optimizer = Adam(model.parameters(), lr=learning_rate)
     loss_function = NLLLoss(None, False)
 
-    model.enable_gradient_clipping(clip)
+    enable_gradient_clipping(model, clip)
 
     if dropout:
         dropout = torch.nn.Dropout(dropout)
@@ -564,32 +566,26 @@ def train(train_data,
             loss += torch.sum(
                 train_batch(model, batch_obj, num_classes, gold, optimizer, loss_function, gpu, debug, dropout)
             )
+
             if i % debug_print == (debug_print - 1):
                 print(".", end="", flush=True)
-                if writer is not None:
-                    for name, param in model.named_parameters():
-                        writer.add_scalar("parameter_mean/" + name,
-                                          param.data.mean(),
-                                          i)
-                        writer.add_scalar("parameter_std/" + name, param.data.std(), i)
-                        if param.grad is not None:
-                            writer.add_scalar("gradient_mean/" + name,
-                                              param.grad.data.mean(),
-                                              i)
-                            writer.add_scalar("gradient_std/" + name,
-                                              param.grad.data.std(),
-                                              i)
-
-                            # writer.add_histogram("scores", model.scores.data)
-                            # writer.add_scalar("gradient_mean/scores",
-                            #                   model.scores.data.mean(),
-                            #       i)
-                            # writer.add_scalar("gradient_std/scores",
-                            #                   model.scores.data.std(),
-                            #                   i)
-                    writer.add_scalar("loss/loss_train", loss, i)
-
             i += 1
+
+        if writer is not None:
+            for name, param in model.named_parameters():
+                writer.add_scalar("parameter_mean/" + name,
+                                  param.data.mean(),
+                                  it)
+                writer.add_scalar("parameter_std/" + name, param.data.std(), it)
+                if param.grad is not None:
+                    writer.add_scalar("gradient_mean/" + name,
+                                      param.grad.data.mean(),
+                                      it)
+                    writer.add_scalar("gradient_std/" + name,
+                                      param.grad.data.std(),
+                                      it)
+
+            writer.add_scalar("loss/loss_train", loss, it)
 
         dev_loss = 0.0
         i = 0
@@ -597,14 +593,14 @@ def train(train_data,
             batch_obj = Batch([x[0] for x in batch], model.embeddings, to_cuda(gpu))
             gold = [x[1] for x in batch]
             dev_loss += torch.sum(compute_loss(model, batch_obj, num_classes, gold, loss_function, gpu, debug).data)
+
             if i % debug_print == (debug_print - 1):
                 print(".", end="", flush=True)
 
-                if writer is not None:
-                    writer.add_scalar("loss/loss_dev", dev_loss, i)
-
             i += 1
 
+        if writer is not None:
+            writer.add_scalar("loss/loss_dev", dev_loss, it)
         print("\n")
 
         finish_iter_time = monotonic()
