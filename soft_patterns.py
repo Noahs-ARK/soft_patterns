@@ -199,7 +199,7 @@ class SoftPatternClassifier(Module):
             elif self.shared_sl == SHARED_SL_SINGLE_PARAM:
                 shared_sl_data = randn(1)
 
-            self.self_loop_scale = Parameter(self.to_cuda(shared_sl_data))
+            self.self_loop_scale = Parameter(shared_sl_data)
         elif not self.no_sl:
             self.self_loop_scale = self.to_cuda(fixed_var(semiring.one(1)))
             self.num_diags = 2
@@ -222,14 +222,13 @@ class SoftPatternClassifier(Module):
         if pre_computed_patterns is not None:
             diag_data, bias_data = self.load_pre_computed_patterns(pre_computed_patterns, diag_data, bias_data, pattern_specs)
 
-        diag_data = self.to_cuda(diag_data)
         self.diags = Parameter(diag_data)
 
         # Bias term
-        self.bias = Parameter(self.to_cuda(bias_data))
+        self.bias = Parameter(bias_data)
 
         if not self.no_eps:
-            self.epsilon = Parameter(self.to_cuda(randn(self.total_num_patterns, self.max_pattern_length - 1)))
+            self.epsilon = Parameter(randn(self.total_num_patterns, self.max_pattern_length - 1))
 
         # TODO: learned? hyperparameter?
             # since these are currently fixed to `semiring.one`, they are not doing anything.
