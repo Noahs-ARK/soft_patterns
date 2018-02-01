@@ -72,11 +72,12 @@ if [ $model -eq 0 ]; then
     no_sl=$(get_param ${f} no_sl)
     no_eps=$(get_param ${f} no_eps)
     eps_scale=$(get_param ${f} eps_scale)
+    self_loop_scale=$(get_param ${f} self_loop_scale)
     bias_scale_param=$(get_param ${f} bias_scale_param)
 
     shared_sl=$(get_param ${f} shared_sl)
 
-    s="$patterns $maxplus $maxtimes $no_sl $no_eps $shared_sl $bias_scale_param $eps_scale"
+    s="$patterns $maxplus $maxtimes $no_sl $no_eps $shared_sl $bias_scale_param $eps_scale $self_loop_scale"
 elif [ $model -eq 1 ]; then
     s="--dan"
 elif [ $model -eq 2 ]; then

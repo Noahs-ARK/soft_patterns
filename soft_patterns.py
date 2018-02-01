@@ -164,7 +164,8 @@ class SoftPatternClassifier(Module):
                  no_sl=False,
                  shared_sl=False,
                  no_eps=False,
-                 eps_scale=None):
+                 eps_scale=None,
+                 self_loop_scale=None):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
         self.vocab = vocab
@@ -202,7 +203,10 @@ class SoftPatternClassifier(Module):
 
             self.self_loop_scale = Parameter(shared_sl_data)
         elif not self.no_sl:
-            self.self_loop_scale = self.to_cuda(fixed_var(semiring.one(1)))
+            if self_loop_scale is not None:
+                self.self_loop_scale = self.semiring.from_float(self.to_cuda(fixed_var(FloatTensor([self_loop_scale]))))
+            else:
+                self.self_loop_scale = self.to_cuda(fixed_var(semiring.one(1)))
             self.num_diags = 2
 
         # end state index for each pattern
@@ -738,7 +742,8 @@ def main(args):
                                   args.no_sl,
                                   args.shared_sl,
                                   args.no_eps,
-                                  args.eps_scale)
+                                  args.eps_scale,
+                                  args.self_loop_scale)
 
     if args.gpu:
         model.to_cuda(model)
@@ -816,6 +821,9 @@ def soft_pattern_arg_parser():
                    default=0.1, type=float)
     p.add_argument("--eps_scale",
                    help="Scale epsilon by this parameter",
+                   default=None, type=float)
+    p.add_argument("--self_loop_scale",
+                   help="Scale self_loop by this parameter",
                    default=None, type=float)
     return p
 
