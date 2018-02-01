@@ -163,7 +163,8 @@ class SoftPatternClassifier(Module):
                  pre_computed_patterns=None,
                  no_sl=False,
                  shared_sl=False,
-                 no_eps=False):
+                 no_eps=False,
+                 eps_scale=None):
         super(SoftPatternClassifier, self).__init__()
         self.semiring = semiring
         self.vocab = vocab
@@ -232,8 +233,10 @@ class SoftPatternClassifier(Module):
 
         # TODO: learned? hyperparameter?
             # since these are currently fixed to `semiring.one`, they are not doing anything.
-            self.epsilon_scale = self.to_cuda(fixed_var(semiring.one(1)))
-
+            if eps_scale is not None:
+                self.epsilon_scale = self.semiring.from_float(self.to_cuda(fixed_var(FloatTensor([eps_scale]))))
+            else:
+                self.epsilon_scale = self.to_cuda(fixed_var(semiring.one(1)))
 
         print("# params:", sum(p.nelement() for p in self.parameters()))
 
@@ -734,7 +737,8 @@ def main(args):
                                   pre_computed_patterns,
                                   args.no_sl,
                                   args.shared_sl,
-                                  args.no_eps)
+                                  args.no_eps,
+                                  args.eps_scale)
 
     if args.gpu:
         model.to_cuda(model)
@@ -810,6 +814,9 @@ def soft_pattern_arg_parser():
     p.add_argument("--bias_scale_param",
                    help="Scale bias term by this parameter",
                    default=0.1, type=float)
+    p.add_argument("--eps_scale",
+                   help="Scale epsilon by this parameter",
+                   default=None, type=float)
     return p
 
 
