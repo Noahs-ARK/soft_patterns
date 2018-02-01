@@ -232,7 +232,7 @@ class SoftPatternClassifier(Module):
 
         # TODO: learned? hyperparameter?
             # since these are currently fixed to `semiring.one`, they are not doing anything.
-            self.epsilon_scale = self.semiring.from_float(self.to_cuda(fixed_var(semiring.one(1))))
+            self.epsilon_scale = self.to_cuda(fixed_var(semiring.one(1)))
 
 
         print("# params:", sum(p.nelement() for p in self.parameters()))
