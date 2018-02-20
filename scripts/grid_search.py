@@ -2,6 +2,7 @@
 
 import sys
 import os
+import os.path
 import copy
 import subprocess
 from operator import mul
@@ -24,14 +25,17 @@ resource_dir = WORK + "/resources/"
 
 def main(args):
 	gpu = None
+	starting_point = 0
 	if len(args) < 4:
-		print("Usage:", args[0], "<dataset> <file name> <n instsances> <gpu (optional)>")
+		print("Usage:", args[0], "<dataset> <file name> <n instsances> <gpu (optional)> <starting point = 0>")
 		print("Dirs are:")
 		for i in range(n_dirs):
 			print("{}: {}".format(i, dirs[i]))
 		return -1
 	elif len(args) > 4:
 		gpu = args[4]
+		if len(args) > 5:
+			starting_point = int(args[5])
 
 	ddir = dirs[int(args[1])]
 	data_dir = resource_dir + "/text_cat/" + ddir
@@ -47,16 +51,9 @@ def main(args):
 	n = reduce(mul, [len(x)-1 for x in all_args], 1)
 	print(all_args)
 
-
-# ps=(6:20,5:20,4:10,3:10,2:10 6:10,5:10,4:10,3:10,2:10 7:10,6:10,5:10,4:10,3:10,2:10 6:10,5:10,4:10 5:10,4:10,3:10,2:10)
-# ls=(0.01 0.05 0.01 0.005)
-# ws=(0 0.05 0.1 0.15)
-# ts=(0 0.05 0.1 0.2 0.3)
-# ds=(0 10 25 50)
-
 	print("Got {} different configurations".format(n))
 
-	indices_to_run = x = [i for i in range(n)]
+	indices_to_run = x = [i for i in range(starting_point, n)]
 	shuffle(indices_to_run)
 	indices_to_run = set(indices_to_run[:n_instances])
 	# print("In2run:", indices_to_run)
@@ -80,7 +77,7 @@ def recursive_run_code(all_args, curr_param_index, curr_index, curr_values, data
 
 def run_code(all_args, curr_values, data_dir, name, curr_index, gpu):
 	# print("Running", name, "with args", curr_values)
-	git_tag = os.popen('git log | head -n 1 | cut -d " " -f2 | cut -b -7').read()
+	git_tag = os.popen('git log | head -n 1 | cut -d " " -f2 | cut -b -7').read().rstrip()
 
 	s = name + "." + str(curr_index)
 	odir =  model_dir + "/output_"+s
@@ -109,7 +106,12 @@ def run_code(all_args, curr_values, data_dir, name, curr_index, gpu):
 			cmd += ' -g'
 
 		print(cmd)
-		os.system(cmd+" |& tee "+model_dir+'logs/'+s + '_' + str(git_tag) + ".real.out")
+		of=model_dir+'logs/'+s + '_' + str(git_tag) + ".out" 
+
+		if os.path.isfile(of):
+			print("Output file "+of+" found. Continuing")
+		else:
+			os.system(cmd+" |& tee "+of)
 
 
 def	gen_cluster_file(s, com):
