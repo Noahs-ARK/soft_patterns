@@ -108,9 +108,12 @@ def main(args):
 
     model.load_state_dict(state_dict)
 
+    if args.gpu:
+        model.to_cuda(model)
+
     test_acc = evaluate_accuracy(model, dev_data, args.batch_size, args.gpu)
 
-    print("Test accuray: {:>8,.3f}%".format(100*test_acc))
+    print("Test accuracy: {:>8,.3f}%".format(100*test_acc))
 
     return 0
 

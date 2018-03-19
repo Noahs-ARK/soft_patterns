@@ -340,7 +340,9 @@ def main(args):
         rnn = None
 
     model = SoftPatternClassifier(pattern_specs, mlp_hidden_dim, num_mlp_layers, num_classes, embeddings, vocab,
-                                  semiring, bias_scale_param, args.gpu, rnn=rnn, pre_computed_patterns=None)
+                                  semiring, args.bias_scale_param, args.gpu, rnn=rnn, pre_computed_patterns=None,
+                                  no_sl=args.no_sl, shared_sl=args.shared_sl, no_eps=args.no_eps,
+                                  eps_scale=args.eps_scale, self_loop_scale=args.self_loop_scale)
 
     if args.gpu:
         state_dict = torch.load(args.input_model)
@@ -348,6 +350,9 @@ def main(args):
         state_dict = torch.load(args.input_model, map_location=lambda storage, loc: storage)
 
     model.load_state_dict(state_dict)
+
+    if args.gpu:
+        model.to_cuda(model)
 
     visualize_patterns(model, dev_data, dev_text, args.k_best)
 
