@@ -825,6 +825,19 @@ def soft_pattern_arg_parser():
     p.add_argument("--self_loop_scale",
                    help="Scale self_loop by this parameter",
                    default=None, type=float)
+    p.add_argument("--no_sl", help="Don't use self loops", action='store_true')
+    p.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
+    p.add_argument("--shared_sl",
+                   help="Share main path and self loop parameters, where self loops are discounted by a self_loop_parameter. "+
+                           str(SHARED_SL_PARAM_PER_STATE_PER_PATTERN)+
+                           ": one parameter per state per pattern, "+str(SHARED_SL_SINGLE_PARAM)+
+                           ": a global parameter.", type=int, default=0)
+    p.add_argument("--max_doc_len",
+                   help="Maximum doc length. For longer documents, spans of length max_doc_len will be randomly "
+                        "selected each iteration (-1 means no restriction)",
+                   type=int, default=-1)
+    p.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
+
     return p
 
 
@@ -833,29 +846,17 @@ def soft_pattern_arg_parser():
 def training_arg_parser():
     """ CLI args related to training models. """
     p = ArgumentParser(add_help=False)
-    p.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
     p.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
-    p.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
     p.add_argument("--patience", help="Patience parameter (for early stopping)", type=int, default=30)
     p.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     p.add_argument("-m", "--model_save_dir", help="where to save the trained model")
     p.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
-    p.add_argument("--no_sl", help="Don't use self loops", action='store_true')
-    p.add_argument("--shared_sl",
-                   help="Share main path and self loop parameters, where self loops are discounted by a self_loop_parameter. "+
-                           str(SHARED_SL_PARAM_PER_STATE_PER_PATTERN)+
-                           ": one parameter per state per pattern, "+str(SHARED_SL_SINGLE_PARAM)+
-                           ": a global parameter.", type=int, default=0)
     p.add_argument("--no_eps", help="Don't use epsilon transitions", action='store_true')
     p.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
     p.add_argument("--input_model", help="Input model (to run test and not train)")
     p.add_argument("--td", help="Train data file", required=True)
     p.add_argument("--tl", help="Train labels file", required=True)
     p.add_argument("--pre_computed_patterns", help="File containing pre-computed patterns")
-    p.add_argument("--max_doc_len",
-                   help="Maximum doc length. For longer documents, spans of length max_doc_len will be randomly "
-                        "selected each iteration (-1 means no restriction)",
-                   type=int, default=-1)
     p.add_argument("--vd", help="Validation data file", required=True)
     p.add_argument("--vl", help="Validation labels file", required=True)
     p.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
