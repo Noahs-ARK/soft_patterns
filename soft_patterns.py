@@ -825,6 +825,7 @@ def soft_pattern_arg_parser():
     p.add_argument("--self_loop_scale",
                    help="Scale self_loop by this parameter",
                    default=None, type=float)
+    p.add_argument("--no_eps", help="Don't use epsilon transitions", action='store_true')
     p.add_argument("--no_sl", help="Don't use self loops", action='store_true')
     p.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
     p.add_argument("--shared_sl",
@@ -851,7 +852,6 @@ def training_arg_parser():
     p.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     p.add_argument("-m", "--model_save_dir", help="where to save the trained model")
     p.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
-    p.add_argument("--no_eps", help="Don't use epsilon transitions", action='store_true')
     p.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
     p.add_argument("--input_model", help="Input model (to run test and not train)")
     p.add_argument("--td", help="Train data file", required=True)
