@@ -120,6 +120,7 @@ class Batch:
     Makes a smaller vocab and embeddings matrix, only including words that are in the batch.
     """
     def __init__(self, docs, embeddings, cuda, word_dropout=0, max_len=-1):
+        # print(docs)
         mini_vocab = Vocab.from_docs(docs, default=UNK_IDX, start=START_TOKEN_IDX, end=END_TOKEN_IDX)
         # Limit maximum document length (for efficiency reasons).
         if max_len != -1:
@@ -838,6 +839,10 @@ def soft_pattern_arg_parser():
                         "selected each iteration (-1 means no restriction)",
                    type=int, default=-1)
     p.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
+    p.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
+    p.add_argument("--vd", help="Validation data file", required=True)
+    p.add_argument("--vl", help="Validation labels file", required=True)
+    p.add_argument("--input_model", help="Input model (to run test and not train)")
 
     return p
 
@@ -849,16 +854,12 @@ def training_arg_parser():
     p = ArgumentParser(add_help=False)
     p.add_argument("-i", "--num_iterations", help="Number of iterations", type=int, default=10)
     p.add_argument("--patience", help="Patience parameter (for early stopping)", type=int, default=30)
-    p.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     p.add_argument("-m", "--model_save_dir", help="where to save the trained model")
     p.add_argument("-r", "--scheduler", help="Use reduce learning rate on plateau schedule", action='store_true')
     p.add_argument("-w", "--word_dropout", help="Use word dropout", type=float, default=0)
-    p.add_argument("--input_model", help="Input model (to run test and not train)")
     p.add_argument("--td", help="Train data file", required=True)
     p.add_argument("--tl", help="Train labels file", required=True)
     p.add_argument("--pre_computed_patterns", help="File containing pre-computed patterns")
-    p.add_argument("--vd", help="Validation data file", required=True)
-    p.add_argument("--vl", help="Validation labels file", required=True)
     p.add_argument("-l", "--learning_rate", help="Adam Learning rate", type=float, default=1e-3)
     p.add_argument("--clip", help="Gradient clipping", type=float, default=None)
     p.add_argument("--debug", help="Debug", type=int, default=0)

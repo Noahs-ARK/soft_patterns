@@ -121,7 +121,7 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser(description=__doc__,
                             formatter_class=ArgumentDefaultsHelpFormatter,
-                            parents=[soft_pattern_arg_parser(), training_arg_parser(), cnn_arg_parser()])
+                            parents=[soft_pattern_arg_parser(), cnn_arg_parser()])
     parser.add_argument("--dan", help="Dan classifier", action='store_true')
     parser.add_argument("--cnn", help="CNN classifier", action='store_true')
     parser.add_argument("--bilstm", help="BiLSTM classifier", action='store_true')
