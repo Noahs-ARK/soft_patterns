@@ -363,10 +363,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                      parents=[soft_pattern_arg_parser()])
-    parser.add_argument("--input_model", help="Input model (to run test and not train)", required=True)
-    parser.add_argument("--vd", help="Validation data file", required=True)
-    parser.add_argument("--vl", help="Validation labels file", required=True)
-    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
     parser.add_argument("-k", "--k_best", help="Number of nearest neighbor phrases", type=int, default=5)
 
     sys.exit(main(parser.parse_args()))
