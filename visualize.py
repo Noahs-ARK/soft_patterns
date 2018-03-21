@@ -16,7 +16,7 @@ from data import vocab_from_text, read_embeddings, read_docs, read_labels
 from rnn import Rnn
 from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
     LogSpaceMaxTimesSemiring, soft_pattern_arg_parser
-from util import decreasing_length, chunked_sorted
+from util import decreasing_length
 
 SCORE_IDX = 0
 START_IDX_IDX = 1
@@ -89,14 +89,14 @@ def visualize_patterns(model,
                        dev_set=None,
                        dev_text=None,
                        k_best=5,
-                       batch_size=1):
+		       max_doc_len=-1):
     dev_sorted = decreasing_length(zip(dev_set, dev_text))
     dev_set = [doc for doc, _ in dev_sorted]
     dev_text = [text for _, text in dev_sorted]
     num_patterns = model.total_num_patterns
     pattern_length = model.max_pattern_length
 
-    back_pointers = [item for sublist in get_top_scoring_sequences(model, dev_set, batch_size) for item in sublist]#list(get_top_scoring_sequences(model, dev_set))
+    back_pointers = list(get_top_scoring_sequences(model, dev_set, max_doc_len))
 
     nearest_neighbors = \
         get_nearest_neighbors(
@@ -229,8 +229,8 @@ def transition_once_with_trace(model,
     return zip_ap_2d(max, happy_paths, self_loops)
 
 
-def get_top_scoring_spans_for_doc(model, batch):
-    batch = Batch([x[:][0] for x in batch], model.embeddings, model.to_cuda)  # single doc
+def get_top_scoring_spans_for_doc(model, doc, max_doc_len):
+    batch = Batch([doc[0]], model.embeddings, model.to_cuda, 0, max_doc_len)  # single doc
     transition_matrices = model.get_transition_matrices(batch)
     num_patterns = model.total_num_patterns
     end_states = model.end_states.data.view(num_patterns)
@@ -248,62 +248,51 @@ def get_top_scoring_spans_for_doc(model, batch):
         ]
 
     eps_value = model.get_eps_value().data
-    hiddens = model.semiring.zero(batch.size(), num_patterns, model.max_pattern_length)
+    hiddens = model.semiring.zero(num_patterns, model.max_pattern_length)
     # set start state activation to 1 for each pattern in each doc
-    hiddens[:, :, 0] = model.semiring.one(batch.size(), num_patterns, 1)
+    hiddens[:, 0] = model.semiring.one(num_patterns, 1)
     # convert to back-pointers
     hiddens = \
         [
             [
-                [
-                    BackPointer(
+                BackPointer(
                     score=state_activation,
                     previous=None,
                     transition=None,
                     start_token_idx=0,
                     end_token_idx=0
-                    )
-                    for state_activation in pattern
-                ]
-                for pattern in hiddens[i,:,:]
+                )
+                for state_activation in pattern
             ]
-            for i in range(batch.size())
+            for pattern in hiddens
         ]
-
+    # extract end-states
     end_state_back_pointers = [
-        [
-            bp[:][end_state]
-            for bp, end_state in zip(hiddens[i], end_states)
-        ]
-        for i in range(batch.size())
+        bp[end_state]
+        for bp, end_state in zip(hiddens, end_states)
     ]
-
     for token_idx, transition_matrix in enumerate(transition_matrices):
-        for i in range(batch.size()):
-            local_transition_matrix = transition_matrix[i, :, :, :].data
-            hiddens[i] = transition_once_with_trace(model,
-                                                     token_idx,
-                                                     eps_value,
-                                                     hiddens[i],
-                                                     local_transition_matrix,
-                                                     restart_padding)
-            # extract end-states and max with current bests
-            end_state_back_pointers[i] = [
-                max(best_bp, hidden_bps[end_state])
-                for best_bp, hidden_bps, end_state in zip(end_state_back_pointers[i], hiddens[i], end_states)
-            ]
+        transition_matrix = transition_matrix[0, :, :, :].data
+        hiddens = transition_once_with_trace(model,
+                                             token_idx,
+                                             eps_value,
+                                             hiddens,
+                                             transition_matrix,
+                                             restart_padding)
+        # extract end-states and max with current bests
+        end_state_back_pointers = [
+            max(best_bp, hidden_bps[end_state])
+            for best_bp, hidden_bps, end_state in zip(end_state_back_pointers, hiddens, end_states)
+        ]
     return end_state_back_pointers
 
 
-def get_top_scoring_sequences(model, dev_set, batch_size):
+def get_top_scoring_sequences(model, dev_set, max_doc_len):
     """ Get top scoring sequences for every pattern and doc. """
-    doc_idx = 0
-    debug_print = int(100 / batch_size) + 1
-    for batch in chunked_sorted(dev_set, batch_size):
-        if doc_idx % debug_print == (debug_print - 1):
+    for doc_idx, doc in enumerate(dev_set):
+        if doc_idx % 100 == 99:
             print(".", end="", flush=True)
-        doc_idx += 1
-        yield get_top_scoring_spans_for_doc(model, batch)
+        yield get_top_scoring_spans_for_doc(model, doc, max_doc_len)
 
 
 # TODO: refactor duplicate code with soft_patterns.py
@@ -366,7 +355,7 @@ def main(args):
     if args.gpu:
         model.to_cuda(model)
 
-    visualize_patterns(model, dev_data, dev_text, args.k_best, args.batch_size)
+    visualize_patterns(model, dev_data, dev_text, args.k_best, args.max_doc_len)
 
     return 0
 

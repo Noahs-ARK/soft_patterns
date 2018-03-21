@@ -49,6 +49,7 @@ def main(args):
 
     global_best = None
     global_best_val = -1 if type == 0 else 1000
+    all_bests = []
 
     for f in files:
         fname = f.split("/")[-1]
@@ -61,6 +62,8 @@ def main(args):
         best = get_top(f, type)
 
         if best != -1:
+            print(best, f)
+            all_bests.append(best)
             l = add_val(res, 1, ls)
             t = add_val(res, 2, ts)
             d = add_val(res, 3, ds)
@@ -89,7 +92,7 @@ def main(args):
     analyze("window size", zs, type)
     analyze("gradient clip", cs, type)
 
-    print("Overall best: {} ({})".format(global_best_val, global_best))
+    print("Overall best across {} runs: {} ({}). Mean: {}".format(len(all_bests), global_best_val, global_best, round(np.mean(all_bests), 3)))
     return 0
 
 def analyze(str, kv, type):

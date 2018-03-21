@@ -26,8 +26,9 @@ resource_dir = WORK + "/resources/"
 def main(args):
 	gpu = None
 	starting_point = 0
+	indices_to_run = None
 	if len(args) < 4:
-		print("Usage:", args[0], "<dataset> <file name> <n instsances> <gpu (optional)> <starting point = 0>")
+		print("Usage:", args[0], "<dataset> <file name> <n instsances> <gpu (optional)> <starting point = 0> <specific instances to run>")
 		print("Dirs are:")
 		for i in range(n_dirs):
 			print("{}: {}".format(i, dirs[i]))
@@ -36,6 +37,8 @@ def main(args):
 		gpu = args[4]
 		if len(args) > 5:
 			starting_point = int(args[5])
+			if len(args) > 6:
+				indices_to_run = set([int(x) for x in args[6].split(",")])
 
 	ddir = dirs[int(args[1])]
 	data_dir = resource_dir + "/text_cat/" + ddir
@@ -53,9 +56,10 @@ def main(args):
 
 	print("Got {} different configurations".format(n))
 
-	indices_to_run = x = [i for i in range(starting_point, n)]
-	shuffle(indices_to_run)
-	indices_to_run = set(indices_to_run[:n_instances])
+	if indices_to_run is None:
+		indices_to_run = x = [i for i in range(starting_point, n)]
+		shuffle(indices_to_run)
+		indices_to_run = set(indices_to_run[:n_instances])
 	# print("In2run:", indices_to_run)
 	recursive_run_code(all_args, 0, 0, [], data_dir, indices_to_run, name, gpu)
 
