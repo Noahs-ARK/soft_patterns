@@ -92,6 +92,7 @@ def visualize_patterns(model,
 		               max_doc_len=-1,
                        num_padding_tokens=0):
     dev_sorted = decreasing_length(zip(dev_set, dev_text))
+    dev_labels = [label for _, label in dev_set]
     dev_set = [doc for doc, _ in dev_sorted]
     dev_text = [text for _, text in dev_sorted]
     num_patterns = model.total_num_patterns
@@ -129,7 +130,7 @@ def visualize_patterns(model,
 
         def span_text(doc_idx):
             back_pointer = back_pointers[doc_idx][p]
-            return back_pointer.score, back_pointer.display(dev_text[doc_idx], '', num_padding_tokens)
+            return back_pointer.score, back_pointer.display(dev_text[doc_idx], '#label={}'.format(dev_labels[doc_idx]), num_padding_tokens)
 
         print("Pattern:", p, "of length", p_len)
         print("Highest scoring spans:")
