@@ -66,10 +66,10 @@ class BackPointer:
         if self.previous is None:
             return extra  # " ".join("{:<15}".format(s) for s in doc_text[self.start_token_idx:self.end_token_idx])
         if self.transition == "self-loop":
-            extra = "SL {:<15}".format(doc_text[self.end_token_idx-1-num_padding_tokens]) + extra
+            extra = "SL {:<15}".format(doc_text[self.end_token_idx - 1 - num_padding_tokens]) + extra
             return self.previous.display(doc_text, extra=extra, num_padding_tokens=num_padding_tokens)
         if self.transition == "happy path":
-            extra = "HP {:<15}".format(doc_text[self.end_token_idx - 1-num_padding_tokens]) + extra
+            extra = "HP {:<15}".format(doc_text[self.end_token_idx - 1 - num_padding_tokens]) + extra
             return self.previous.display(doc_text, extra=extra, num_padding_tokens=num_padding_tokens)
         extra = "ep {:<15}".format("") + extra
         return self.previous.display(doc_text, extra=extra, num_padding_tokens=num_padding_tokens)
@@ -129,7 +129,7 @@ def visualize_patterns(model,
 
         def span_text(doc_idx):
             back_pointer = back_pointers[doc_idx][p]
-            return back_pointer.score, back_pointer.display(dev_text[doc_idx], num_padding_tokens)
+            return back_pointer.score, back_pointer.display(dev_text[doc_idx], '', num_padding_tokens)
 
         print("Pattern:", p, "of length", p_len)
         print("Highest scoring spans:")
