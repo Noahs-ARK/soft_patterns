@@ -95,7 +95,7 @@ def visualize_patterns(model,
     num_patterns = model.total_num_patterns
     pattern_length = model.max_pattern_length
 
-    back_pointers = list(get_top_scoring_sequences(model, dev_set))
+    back_pointers = list(get_top_scoring_sequences(model, dev_set, max_doc_len))
 
     nearest_neighbors = \
         get_nearest_neighbors(
@@ -228,8 +228,8 @@ def transition_once_with_trace(model,
     return zip_ap_2d(max, happy_paths, self_loops)
 
 
-def get_top_scoring_spans_for_doc(model, doc):
-    batch = Batch([doc[0]], model.embeddings, model.to_cuda)  # single doc
+def get_top_scoring_spans_for_doc(model, doc, max_doc_len):
+    batch = Batch([doc[0]], model.embeddings, model.to_cuda, 0, max_len)  # single doc
     transition_matrices = model.get_transition_matrices(batch)
     num_patterns = model.total_num_patterns
     end_states = model.end_states.data.view(num_patterns)
@@ -286,12 +286,12 @@ def get_top_scoring_spans_for_doc(model, doc):
     return end_state_back_pointers
 
 
-def get_top_scoring_sequences(model, dev_set):
+def get_top_scoring_sequences(model, dev_set, max_doc_len):
     """ Get top scoring sequences for every pattern and doc. """
     for doc_idx, doc in enumerate(dev_set):
         if doc_idx % 100 == 99:
             print(".", end="", flush=True)
-        yield get_top_scoring_spans_for_doc(model, doc)
+        yield get_top_scoring_spans_for_doc(model, doc, max_doc_len)
 
 
 # TODO: refactor duplicate code with soft_patterns.py
@@ -354,7 +354,7 @@ def main(args):
     if args.gpu:
         model.to_cuda(model)
 
-    visualize_patterns(model, dev_data, dev_text, args.k_best)
+    visualize_patterns(model, dev_data, dev_text, args.k_best, args.max_doc_len)
 
     return 0
 
