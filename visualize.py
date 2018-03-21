@@ -62,17 +62,17 @@ class BackPointer:
                 self.end_token_idx
             )
 
-    def display(self, doc_text, extra=""):
+    def display(self, doc_text, extra="", num_padding_tokens=0):
         if self.previous is None:
             return extra  # " ".join("{:<15}".format(s) for s in doc_text[self.start_token_idx:self.end_token_idx])
         if self.transition == "self-loop":
-            extra = "SL {:<15}".format(doc_text[self.end_token_idx-1]) + extra
-            return self.previous.display(doc_text, extra=extra)
+            extra = "SL {:<15}".format(doc_text[self.end_token_idx-1-num_padding_tokens]) + extra
+            return self.previous.display(doc_text, extra=extra, num_padding_tokens=num_padding_tokens)
         if self.transition == "happy path":
-            extra = "HP {:<15}".format(doc_text[self.end_token_idx - 1]) + extra
-            return self.previous.display(doc_text, extra=extra)
+            extra = "HP {:<15}".format(doc_text[self.end_token_idx - 1-num_padding_tokens]) + extra
+            return self.previous.display(doc_text, extra=extra, num_padding_tokens=num_padding_tokens)
         extra = "ep {:<15}".format("") + extra
-        return self.previous.display(doc_text, extra=extra)
+        return self.previous.display(doc_text, extra=extra, num_padding_tokens=num_padding_tokens)
 
 
 def get_nearest_neighbors(w, embeddings, k=1000):
@@ -89,7 +89,8 @@ def visualize_patterns(model,
                        dev_set=None,
                        dev_text=None,
                        k_best=5,
-		       max_doc_len=-1):
+		               max_doc_len=-1,
+                       num_padding_tokens=0):
     dev_sorted = decreasing_length(zip(dev_set, dev_text))
     dev_set = [doc for doc, _ in dev_sorted]
     dev_text = [text for _, text in dev_sorted]
@@ -128,7 +129,7 @@ def visualize_patterns(model,
 
         def span_text(doc_idx):
             back_pointer = back_pointers[doc_idx][p]
-            return back_pointer.score, back_pointer.display(dev_text[doc_idx])
+            return back_pointer.score, back_pointer.display(dev_text[doc_idx], num_padding_tokens)
 
         print("Pattern:", p, "of length", p_len)
         print("Highest scoring spans:")
@@ -355,7 +356,7 @@ def main(args):
     if args.gpu:
         model.to_cuda(model)
 
-    visualize_patterns(model, dev_data, dev_text, args.k_best, args.max_doc_len)
+    visualize_patterns(model, dev_data, dev_text, args.k_best, args.max_doc_len, num_padding_tokens)
 
     return 0
 
