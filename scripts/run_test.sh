@@ -97,8 +97,6 @@ com="python -u soft_patterns_test.py  \
     ${e} \
     --vd ${test_data} \
     --vl ${test_labels} \
-    --td '' \
-    --tl '' \
     ${mlp_hidden_dim} \
     $seed \
     -b 150 $gpu_flag \
