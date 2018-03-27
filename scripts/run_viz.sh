@@ -52,12 +52,14 @@ echo $maxtimes is mt
 mlp_hidden_dim=$(get_param ${f} mlp_hidden_dim)
 num_mlp_layers=$(get_param ${f} num_mlp_layers)
 patterns=$(get_param ${f} patterns)
+no_eps=$(get_param ${f} no_eps)
+no_sl=$(get_param ${f} no_sl)
 seed=$(get_param ${f} seed)
 vd=$(get_param ${f} td | awk '{print $2}')
 vl=$(get_param ${f} tl | awk '{print $2}')
 
 
-com="python -u visualize.py  \
+com="python -u visualize_efficiently.py  \
     ${e} \
     ${patterns} \
     --vd ${vd} \
@@ -67,7 +69,7 @@ com="python -u visualize.py  \
     ${maxplus} \
     ${maxtimes} \
     -b 150 \
-    -k 10 \
+    -k 10 $no_sl $no_eps \
     ${num_mlp_layers} \
     --input_model ${model_dir}/model_${model_num}.pth"
 
