@@ -103,7 +103,7 @@ def get_candidate_documents(model,
         # Adding epsilon to scores in order to not have two documents with the same score
         epsilon = (torch.rand(scores.size())-0.5)/10000
 
-        scores += epsilon
+        scores += model.to_cuda(epsilon)
 
         for i in range(num_patterns):
             for j in range(batch_obj.size()):
