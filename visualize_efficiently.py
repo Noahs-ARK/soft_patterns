@@ -173,7 +173,9 @@ def visualize_patterns(model,
     fwd_one_norms = torch.norm(diags[:, 1, :, :], 2, 2)
     fwd_one_biases = biases[:, 1, :]
     fwd_one_neighbs = nearest_neighbors[:, 1, :]
-    epsilons = model.get_eps_value().data
+
+    if not model.no_eps:
+        epsilons = model.get_eps_value().data
 
     for p in range(num_patterns):
         back_pointers = list(get_top_scoring_sequences(model, dev_set[p], max_doc_len))
@@ -199,7 +201,8 @@ def visualize_patterns(model,
         def transition_str(norm, neighb, bias):
             return "{:5.2f} * {:<15} + {:5.2f}".format(norm, model.vocab[neighb], bias)
 
-        print("self-loops: ",
+        if not model.no_sl:
+            print("self-loops: ",
               ", ".join(
                   transition_str(norm, neighb, bias)
                   for norm, neighb, bias in zip(self_loop_norms[p, :p_len],
@@ -211,7 +214,8 @@ def visualize_patterns(model,
                   for norm, neighb, bias in zip(fwd_one_norms[p, :p_len - 1],
                                                 fwd_one_neighbs[p, :p_len - 1],
                                                 fwd_one_biases[p, :p_len - 1])))
-        print("epsilons:   ",
+        if not model.no_eps:
+            print("epsilons:   ",
               ", ".join("{:31.2f}".format(x) for x in epsilons[p, :p_len - 1]))
         print()
 
@@ -248,20 +252,23 @@ def transition_once_with_trace(model,
     # Epsilon transitions (don't consume a token, move forward one state)
     # We do this before self-loops and single-steps.
     # We only allow one epsilon transition in a row.
-    epsilons = cat_2d(
-        restart_padding(token_idx),
-        zip_ap_2d(
-            lambda bp, e: BackPointer(score=times(bp.score, e),
-                                      previous=bp,
-                                      transition="epsilon-transition",
-                                      start_token_idx=bp.start_token_idx,
-                                      end_token_idx=token_idx),
-            [xs[:-1] for xs in back_pointers],
-            eps_value  # doesn't depend on token, just state
+    if not model.no_eps:
+        epsilons = cat_2d(
+            restart_padding(token_idx),
+            zip_ap_2d(
+                lambda bp, e: BackPointer(score=times(bp.score, e),
+                                          previous=bp,
+                                          transition="epsilon-transition",
+                                          start_token_idx=bp.start_token_idx,
+                                          end_token_idx=token_idx),
+                [xs[:-1] for xs in back_pointers],
+                eps_value  # doesn't depend on token, just state
+            )
         )
-    )
 
-    epsilons = zip_ap_2d(max, back_pointers, epsilons)
+        epsilons = zip_ap_2d(max, back_pointers, epsilons)
+    else:
+        epsilons = back_pointers
 
     happy_paths = cat_2d(
         restart_padding(token_idx),
@@ -276,17 +283,20 @@ def transition_once_with_trace(model,
         )
     )
 
-    # Adding self loops (consume a token, stay in same state)
-    self_loops = zip_ap_2d(
-        lambda bp, sl: BackPointer(score=times(bp.score, sl),
-                                   previous=bp,
-                                   transition="self-loop",
-                                   start_token_idx=bp.start_token_idx,
-                                   end_token_idx=token_idx + 1),
-        epsilons,
-        transition_matrix_val[:, 0, :]
-    )
-    return zip_ap_2d(max, happy_paths, self_loops)
+    if not model.no_eps:
+        # Adding self loops (consume a token, stay in same state)
+        self_loops = zip_ap_2d(
+            lambda bp, sl: BackPointer(score=times(bp.score, sl),
+                                       previous=bp,
+                                       transition="self-loop",
+                                       start_token_idx=bp.start_token_idx,
+                                       end_token_idx=token_idx + 1),
+            epsilons,
+            transition_matrix_val[:, 0, :]
+        )
+        return zip_ap_2d(max, happy_paths, self_loops)
+    else:
+        return happy_paths
 
 
 def get_top_scoring_spans_for_doc(model, doc, max_doc_len):
@@ -308,7 +318,9 @@ def get_top_scoring_spans_for_doc(model, doc, max_doc_len):
             for x in model.semiring.one(num_patterns)
         ]
 
-    eps_value = model.get_eps_value().data
+    if not model.no_eps:
+        eps_value = model.get_eps_value().data
+
     hiddens = model.semiring.zero(num_patterns, model.max_pattern_length)
     # set start state activation to 1 for each pattern in each doc
     hiddens[:, 0] = model.semiring.one(num_patterns, 1)
