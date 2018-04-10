@@ -865,7 +865,7 @@ def general_arg_parser():
     p.add_argument("--vd", help="Validation data file", required=True)
     p.add_argument("--vl", help="Validation labels file", required=True)
     p.add_argument("--input_model", help="Input model (to run test and not train)")
-
+    return p
 
 
 if __name__ == '__main__':
