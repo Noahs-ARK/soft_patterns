@@ -75,4 +75,11 @@ com="python -u visualize_efficiently.py  \
 
 echo ${com}
 
-${com} | tee ${model_dir}/viz_${model_num}.dat
+of=${model_dir}/viz_${model_num}.dat
+
+if [ -e $of ]; then
+	echo "$of found. Please remove it if you want to override it"
+	exit -2
+fi 
+
+${com} | tee $of

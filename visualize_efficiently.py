@@ -174,8 +174,7 @@ def visualize_patterns(model,
     fwd_one_biases = biases[:, 1, :]
     fwd_one_neighbs = nearest_neighbors[:, 1, :]
 
-    if not model.no_eps:
-        epsilons = model.get_eps_value().data
+    epsilons = model.get_eps_value().data if not model.no_eps else None
 
     for p in range(num_patterns):
         back_pointers = list(get_top_scoring_sequences(model, dev_set[p], max_doc_len))
@@ -318,8 +317,7 @@ def get_top_scoring_spans_for_doc(model, doc, max_doc_len):
             for x in model.semiring.one(num_patterns)
         ]
 
-    if not model.no_eps:
-        eps_value = model.get_eps_value().data
+    eps_value = model.get_eps_value().data if not model.no_eps else None
 
     hiddens = model.semiring.zero(num_patterns, model.max_pattern_length)
     # set start state activation to 1 for each pattern in each doc
