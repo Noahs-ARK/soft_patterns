@@ -805,12 +805,9 @@ def soft_pattern_arg_parser():
     p = ArgumentParser(add_help=False,
                        parents=[lstm_arg_parser(), mlp_arg_parser()])
     p.add_argument("-u", "--use_rnn", help="Use an RNN underneath soft-patterns", action="store_true")
-    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
     p.add_argument("-p", "--patterns",
                    help="Pattern lengths and numbers: a comma separated list of length:number pairs",
                    default="5:50,4:50,3:50,2:50")
-    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
-    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
     p.add_argument("--maxplus",
                    help="Use max-plus semiring instead of plus-times",
                    default=False, action='store_true')
@@ -828,21 +825,11 @@ def soft_pattern_arg_parser():
                    default=None, type=float)
     p.add_argument("--no_eps", help="Don't use epsilon transitions", action='store_true')
     p.add_argument("--no_sl", help="Don't use self loops", action='store_true')
-    p.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
     p.add_argument("--shared_sl",
                    help="Share main path and self loop parameters, where self loops are discounted by a self_loop_parameter. "+
                            str(SHARED_SL_PARAM_PER_STATE_PER_PATTERN)+
                            ": one parameter per state per pattern, "+str(SHARED_SL_SINGLE_PARAM)+
                            ": a global parameter.", type=int, default=0)
-    p.add_argument("--max_doc_len",
-                   help="Maximum doc length. For longer documents, spans of length max_doc_len will be randomly "
-                        "selected each iteration (-1 means no restriction)",
-                   type=int, default=-1)
-    p.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
-    p.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
-    p.add_argument("--vd", help="Validation data file", required=True)
-    p.add_argument("--vl", help="Validation labels file", required=True)
-    p.add_argument("--input_model", help="Input model (to run test and not train)")
 
     return p
 
@@ -865,9 +852,24 @@ def training_arg_parser():
     p.add_argument("--debug", help="Debug", type=int, default=0)
     return p
 
+def general_arg_parser():
+    """ CLI args related to training and testing models. """
+    p = ArgumentParser(add_help=False)
+    p.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
+    p.add_argument("--max_doc_len",
+                   help="Maximum doc length. For longer documents, spans of length max_doc_len will be randomly "
+                        "selected each iteration (-1 means no restriction)",
+                   type=int, default=-1)
+    p.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
+    p.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
+    p.add_argument("--vd", help="Validation data file", required=True)
+    p.add_argument("--vl", help="Validation labels file", required=True)
+    p.add_argument("--input_model", help="Input model (to run test and not train)")
+
+
 
 if __name__ == '__main__':
     parser = ArgumentParser(description=__doc__,
                             formatter_class=ArgumentDefaultsHelpFormatter,
-                            parents=[soft_pattern_arg_parser(), training_arg_parser()])
+                            parents=[soft_pattern_arg_parser(), training_arg_parser(), general_arg_parser()])
     sys.exit(main(parser.parse_args()))

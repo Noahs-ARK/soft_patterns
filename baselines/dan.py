@@ -16,7 +16,7 @@ example usage:
 """
 import argparse
 import sys; sys.path.append(".")
-from soft_patterns import train, training_arg_parser
+from soft_patterns import train, training_arg_parser, general_arg_parser
 from util import to_cuda
 import numpy as np
 import os
@@ -154,18 +154,10 @@ def main(args):
           patience=args.patience)
 
 
-def dan_arg_parser():
-    p = argparse.ArgumentParser(add_help=False,
-                                parents=[mlp_arg_parser()])
-    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
-    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    return p
-
 
 if __name__ == '__main__':
     parser = \
         argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                parents=[dan_arg_parser(), training_arg_parser()])
+                                parents=[training_arg_parser(), general_arg_parser()])
     main(parser.parse_args())

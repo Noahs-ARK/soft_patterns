@@ -12,9 +12,9 @@ import torch
 import numpy as np
 from torch.nn import LSTM
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
-from soft_patterns import MaxPlusSemiring, LogSpaceMaxTimesSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring, training_arg_parser, \
-    soft_pattern_arg_parser
-from rnn import lstm_arg_parser, Rnn
+from soft_patterns import MaxPlusSemiring, LogSpaceMaxTimesSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring, \
+    soft_pattern_arg_parser, general_arg_parser
+from rnn import Rnn
 
 SCORE_IDX = 0
 START_IDX_IDX = 1
@@ -121,7 +121,7 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser(description=__doc__,
                             formatter_class=ArgumentDefaultsHelpFormatter,
-                            parents=[soft_pattern_arg_parser(), cnn_arg_parser()])
+                            parents=[soft_pattern_arg_parser(), cnn_arg_parser(), general_arg_parser()])
     parser.add_argument("--dan", help="Dan classifier", action='store_true')
     parser.add_argument("--cnn", help="CNN classifier", action='store_true')
     parser.add_argument("--bilstm", help="BiLSTM classifier", action='store_true')

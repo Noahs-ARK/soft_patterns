@@ -25,7 +25,7 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import sys; sys.path.append(".")
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.functional import relu
-from soft_patterns import train, training_arg_parser
+from soft_patterns import train, training_arg_parser, general_arg_parser
 import numpy as np
 import os
 import torch
@@ -360,6 +360,7 @@ def main(args):
           args.scheduler,
           gpu=args.gpu,
           clip=args.clip,
+          max_len=args.max_doc_len,
           debug=args.debug,
           dropout=dropout,
           word_dropout=args.word_dropout,
@@ -373,16 +374,13 @@ def cnn_arg_parser():
     p.add_argument("-c", "--cnn_hidden_dim", help="CNN hidden dimension", type=int, default=200)
     p.add_argument("-x", "--num_cnn_layers", help="Number of MLP layers", type=int, default=2)
     p.add_argument("-z", "--window_size", help="Size of window of CNN", type=int, default=3)
+    p.add_argument("-p", "--pooling", help="Type of pooling to use [max, sum, avg]", type=str, default="max")
     return p
 
 
 def pooling_cnn_arg_parser():
     p = ArgumentParser(add_help=False,
                        parents=[cnn_arg_parser(), mlp_arg_parser()])
-    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    p.add_argument("-p", "--pooling", help="Type of pooling to use [max, sum, avg]", type=str, default="max")
-    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
     return p
 
 
@@ -390,5 +388,5 @@ if __name__ == '__main__':
     parser = \
         ArgumentParser(description=__doc__,
                        formatter_class=ArgumentDefaultsHelpFormatter,
-                       parents=[pooling_cnn_arg_parser(), training_arg_parser()])
+                       parents=[pooling_cnn_arg_parser(), training_arg_parser(), general_arg_parser()])
     main(parser.parse_args())

@@ -21,7 +21,7 @@ import argparse
 import sys; sys.path.append(".")
 from torch.nn.utils.rnn import pad_packed_sequence
 from rnn import lstm_arg_parser, Rnn
-from soft_patterns import train, training_arg_parser
+from soft_patterns import train, training_arg_parser, general_arg_parser
 import numpy as np
 import os
 import torch
@@ -180,18 +180,9 @@ def main(args):
           patience=args.patience)
 
 
-def averaging_rnn_arg_parser():
-    p = argparse.ArgumentParser(add_help=False,
-                                parents=[lstm_arg_parser(), mlp_arg_parser()])
-    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
-    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
-    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
-    return p
-
-
 if __name__ == '__main__':
     parser = \
         argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                parents=[averaging_rnn_arg_parser(), training_arg_parser()])
+                                parents=[lstm_arg_parser(), mlp_arg_parser(), training_arg_parser(), general_arg_parser()])
     main(parser.parse_args())

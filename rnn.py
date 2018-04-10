@@ -62,7 +62,6 @@ class Rnn(Module):
 
 def lstm_arg_parser():
     p = argparse.ArgumentParser(add_help=False)
-    # p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
     p.add_argument("--hidden_dim", help="RNN hidden dimension", type=int, default=100)
     # p.add_argument("--gru", help="Use GRU cells instead of LSTM cells", action='store_true')
     return p

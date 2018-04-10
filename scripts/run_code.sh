@@ -18,7 +18,7 @@ mtf=''
 mts=''
 glove_index=0
 gloves=(6B.100d 6B.300d 840B.300d 6B.50d)
-dirs=(stanford_sentiment_binary amazon_reviews ROC_stories stanford_sentiment_binary_100 stanford_sentiment_binary_500 stanford_sentiment_binary_1000 stanford_sentiment_binary_2500 amazon_reviews_100 amazon_reviews_500 amazon_reviews_1000 amazon_reviews_2500 amazon_reviews_5000 amazon_reviews_10000 politifact)
+dirs=(stanford_sentiment_binary amazon_reviews ROC_stories stanford_sentiment_binary_100 stanford_sentiment_binary_500 stanford_sentiment_binary_1000 stanford_sentiment_binary_2500 amazon_reviews_100 amazon_reviews_500 amazon_reviews_1000 amazon_reviews_2500 amazon_reviews_5000 amazon_reviews_10000 politifact Bills)
 
 n_dirs=${#dirs[@]}
 let n_dirs--
@@ -208,6 +208,8 @@ if [[ "$HOSTNAME" == *.stampede2.tacc.utexas.edu ]]; then
     f=$(gen_cluster_file ${s})
 
     sbatch ${f}
+elif [[ $HOSTNAME = roys.local ]]; then
+    ${com} 2&>1 | tee ${odir}/output.dat
 else
     ${com} |& tee ${odir}/output.dat
 fi
