@@ -865,6 +865,10 @@ def general_arg_parser():
     p.add_argument("--vd", help="Validation data file", required=True)
     p.add_argument("--vl", help="Validation labels file", required=True)
     p.add_argument("--input_model", help="Input model (to run test and not train)")
+    p.add_argument("-t", "--dropout", help="Use dropout", type=float, default=0)
+    p.add_argument("-g", "--gpu", help="Use GPU", action='store_true')
+    p.add_argument("-e", "--embedding_file", help="Word embedding file", required=True)
+
     return p
 
 
