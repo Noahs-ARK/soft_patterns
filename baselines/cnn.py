@@ -374,7 +374,7 @@ def cnn_arg_parser():
     p.add_argument("-c", "--cnn_hidden_dim", help="CNN hidden dimension", type=int, default=200)
     p.add_argument("-x", "--num_cnn_layers", help="Number of MLP layers", type=int, default=2)
     p.add_argument("-z", "--window_size", help="Size of window of CNN", type=int, default=3)
-    p.add_argument("-p", "--pooling", help="Type of pooling to use [max, sum, avg]", type=str, default="max")
+    p.add_argument("-o", "--pooling", help="Type of pooling to use [max, sum, avg]", type=str, default="max")
     return p
 
 
