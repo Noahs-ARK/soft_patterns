@@ -16,7 +16,7 @@ The training and test code requires a two files for training, development and te
 Both files contain one line per sample. The data file contains the text, and the labels file contain the label.
 In addition, a word vector file is required (plain text, standard format of one line per vector, starting with the word, followed by the vector).
 
-For other paramteres, run the following commands using the ````--help``` flag.
+For other paramteres, run the following commands using the ```--help``` flag.
 
 ## Training
 
