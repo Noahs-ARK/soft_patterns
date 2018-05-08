@@ -806,8 +806,8 @@ def soft_pattern_arg_parser():
                        parents=[lstm_arg_parser(), mlp_arg_parser()])
     p.add_argument("-u", "--use_rnn", help="Use an RNN underneath soft-patterns", action="store_true")
     p.add_argument("-p", "--patterns",
-                   help="Pattern lengths and numbers: a comma separated list of length:number pairs",
-                   default="5:50,4:50,3:50,2:50")
+                   help="Pattern lengths and numbers: an underscore separated list of length-number pairs",
+                   default="5-50_4-50_3-50_2-50")
     p.add_argument("--maxplus",
                    help="Use max-plus semiring instead of plus-times",
                    default=False, action='store_true')
