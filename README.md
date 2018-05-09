@@ -51,6 +51,8 @@ To test our model, run
 2. train doesn't run with gpu
 3. test doesn't correspond to train
 4. unittest fails
+5. Address interpret_classification_results.py
+6. Make sure interpret_classification_results.py works
 
 ## Visualizing the Model
 SoPa offers two types of visualization. One
