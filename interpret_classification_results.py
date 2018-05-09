@@ -10,12 +10,12 @@ import torch
 from torch.nn import LSTM
 
 from rnn import Rnn
-from visualize import get_top_scoring_spans_for_doc
+from visualize_efficiently import get_top_scoring_spans_for_doc
 from torch.nn.functional import softmax
 from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
 from soft_patterns import MaxPlusSemiring, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
-    LogSpaceMaxTimesSemiring, soft_pattern_arg_parser
+    LogSpaceMaxTimesSemiring, soft_pattern_arg_parser, general_arg_parser
 from util import chunked
 import numpy as np
 
@@ -24,7 +24,7 @@ START_IDX_IDX = 1
 END_IDX_IDX = 2
 
 
-def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
+def interpret_documents(model, batch_size, dev_data, dev_text, ofile, max_doc_len):
     j = 0
     with open(ofile, "w") as ofh:
         for batch_idx, chunk in enumerate(chunked(dev_data, batch_size)):
@@ -71,7 +71,7 @@ def interpret_documents(model, batch_size, dev_data, dev_text, ofile):
                 # Top ten patterns with largest overall score (regardless of classification)
                 top_ten_scores = sorted(enumerate(scores.data.numpy()[i, :]), key=lambda x: x[1], reverse=True)[:10]
 
-                top_scoring_spans = get_top_scoring_spans_for_doc(model, dev_data[j])
+                top_scoring_spans = get_top_scoring_spans_for_doc(model, dev_data[j], max_doc_len)
 
                 # Printing out everything.
                 ofh.write("{}   {}   {} All in, predicted: {:>2,.3f}   All in, not-predicted: {:>2,.3f}    Leave one out: +res: {} -res: {} Patt scores: {}\n".format(
@@ -154,7 +154,7 @@ def main(args):
     # Loading model
     model.load_state_dict(state_dict)
 
-    interpret_documents(model, args.batch_size, dev_data, dev_text, args.ofile)
+    interpret_documents(model, args.batch_size, dev_data, dev_text, args.ofile, args.max_doc_len)
 
     return 0
 
@@ -162,13 +162,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                     parents=[soft_pattern_arg_parser()])
-    parser.add_argument("-s", "--seed", help="Random seed", type=int, default=100)
-    parser.add_argument("--input_model", help="Input model (to run test and not train)", required=True)
-    parser.add_argument("--vd", help="Validation data file", required=True)
-    parser.add_argument("--vl", help="Validation labels file", required=True)
+                                     parents=[soft_pattern_arg_parser(), general_arg_parser()])
     parser.add_argument("--ofile", help="Output file", required=True)
-    parser.add_argument("-n", "--num_train_instances", help="Number of training instances", type=int, default=None)
-    parser.add_argument("-b", "--batch_size", help="Batch size", type=int, default=1)
 
     sys.exit(main(parser.parse_args()))
