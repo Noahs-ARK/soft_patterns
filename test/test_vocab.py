@@ -15,8 +15,8 @@ class TestVocab(unittest.TestCase):
         self.assertEqual(len(vocab), max_vocab_size+2)
         self.assertEqual(dim, 50)
         self.assertEqual(vocab(UNK_TOKEN), 0)
-        self.assertEqual(vocab("the"), 1)
-        self.assertEqual(vocab(","), 2)
+        self.assertEqual(vocab("the"), 3)
+        self.assertEqual(vocab(","), 4)
         self.assertAlmostEqualList(
             list(vecs[vocab("the")])[:10],
             [
