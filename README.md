@@ -54,3 +54,20 @@ Under construction.
 ```bash
 python -m unittest
 ```
+
+## References
+If you make use if this code, please cite the following paper:
+
+```bash
+
+@inproceedings{Schwartz:2018,
+  author={Schwartz, Roy and Thomson, Sam and Smith, Noah A.},
+  title={{SoPa}: Bridging {CNNs}, {RNNs}, and Weighted Finite-State Machines},
+  booktitle={Proc. of ACL},
+  year={2018}
+}
+```
+
+## Contact
+
+For questions, comments or feedback, please email roysch@cs.washington.edu
