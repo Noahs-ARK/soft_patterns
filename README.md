@@ -8,7 +8,7 @@ The code is implemented in python3.6 using pytorch. To run, we recommend using c
 
 ```bash
 conda env create -f environment.yml
-source activate softpatterns
+source activate sopa
 ```
 
 ### Data format
