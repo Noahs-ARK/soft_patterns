@@ -15,7 +15,7 @@ from torch.nn import LSTM
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
 from rnn import Rnn
 from soft_patterns import MaxPlusSemiring, fixed_var, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
-    LogSpaceMaxTimesSemiring, soft_pattern_arg_parser
+    LogSpaceMaxTimesSemiring, soft_pattern_arg_parser, general_arg_parser
 from util import decreasing_length
 
 SCORE_IDX = 0
@@ -365,7 +365,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                     parents=[soft_pattern_arg_parser()])
+                                     parents=[soft_pattern_arg_parser(), general_arg_parser()])
     parser.add_argument("-k", "--k_best", help="Number of nearest neighbor phrases", type=int, default=5)
 
     sys.exit(main(parser.parse_args()))
