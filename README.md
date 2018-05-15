@@ -36,7 +36,8 @@ python3.6 ./soft_patterns.py \
 ### Test
 To test our model, run
 
-```bash python3.6 ./soft_patterns_test.py \
+```bash
+python3.6 ./soft_patterns_test.py \
     -e <word embeddings file> \
     --vd <test data> \
     --vl <test labels> \
@@ -48,22 +49,21 @@ To test our model, run
 ### TODO
 
 1. fix visualization script
-2. train doesn't run with gpu
-3. test doesn't correspond to train
+2. train doesn't run with gpu -- resolved(cuda version issue)
+3. test doesn't correspond to train -- resolved
 4. unittest fails
 5. Address interpret_classification_results.py
 6. Make sure interpret_classification_results.py works
 
 ## Visualizing the Model
 SoPa offers two types of visualization. One
-```bash python3.6 ./visualize.py \
+```bash
+python3.6 ./visualize.py \
     --vd <data file to visualize> \
     --vl <labels of data file to visualize> \
     --input_model <input model>
-    -p "5-10_4-10_3-20_2-20" \
-    -b 1000 \
-    --maxtimes \
-    --input_model "${model_dir}/output_p5-10_4-10_3-20_2-20_d1_l1e-3_t0.2_r_b_6B.100d_slScale0_epsScale0_3d79c4f/model_25.pth"
+    -p <pattern specification> \
+    --input_model <input model>"
 ```
 
 
