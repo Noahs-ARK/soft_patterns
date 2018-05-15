@@ -12,7 +12,7 @@ class TestVocab(unittest.TestCase):
         """ Tests that `data.read_embeddings` works for a small file """
         max_vocab_size = 4
         vocab, vecs, dim = read_embeddings(EMBEDDINGS_FILENAME, max_vocab_size=max_vocab_size)
-        self.assertEqual(len(vocab), max_vocab_size)
+        self.assertEqual(len(vocab), max_vocab_size+2)
         self.assertEqual(dim, 50)
         self.assertEqual(vocab(UNK_TOKEN), 0)
         self.assertEqual(vocab("the"), 1)
