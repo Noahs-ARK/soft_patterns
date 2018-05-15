@@ -46,26 +46,8 @@ python3.6 ./soft_patterns_test.py \
 ```
 
 
-### TODO
-
-1. fix visualization script
-2. train doesn't run with gpu -- resolved(cuda version issue)
-3. test doesn't correspond to train -- resolved
-4. unittest fails
-5. Address interpret_classification_results.py
-6. Make sure interpret_classification_results.py works
-
 ## Visualizing the Model
-SoPa offers two types of visualization. One
-```bash
-python3.6 ./visualize.py \
-    --vd <data file to visualize> \
-    --vl <labels of data file to visualize> \
-    --input_model <input model>
-    -p <pattern specification> \
-    --input_model <input model>"
-```
-
+Under construction.
 
 ## Sanity Tests
 
