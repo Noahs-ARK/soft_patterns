@@ -26,8 +26,8 @@ class Vocab:
     def __init__(self,
                  names,
                  default=UNK_TOKEN,
-                 start=START_TOKEN,
-                 end=END_TOKEN):
+                 start=START_TOKEN_IDX,
+                 end=END_TOKEN_IDX):
         self.default = default
         self.names = list(nub(chain([default, start, end], names)))
         self.index = {name: i for i, name in enumerate(self.names)}
@@ -58,7 +58,7 @@ class Vocab:
         return [self[idx] for idx in doc]
 
     @staticmethod
-    def from_docs(docs, default=UNK_TOKEN, start=START_TOKEN, end=END_TOKEN):
+    def from_docs(docs, default=UNK_TOKEN, start=START_TOKEN_IDX, end=END_TOKEN_IDX):
         return Vocab(
             (i for doc in docs for i in doc),
             default=default,
