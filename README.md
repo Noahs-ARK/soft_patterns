@@ -1,5 +1,5 @@
 # Soft Patterns
-Text classification code using SoPa, based on ["SoPa: Bridging CNNs, RNNs, and Weighted Finite-State Machines"](https://arxiv.org/) by Roy Schwartz, Sam Thomson and Noah A. Smith, ACL 2018
+Text classification code using SoPa, based on ["SoPa: Bridging CNNs, RNNs, and Weighted Finite-State Machines"](https://arxiv.org/abs/1805.06061) by Roy Schwartz, Sam Thomson and Noah A. Smith, ACL 2018
 
 
 ## Setup
