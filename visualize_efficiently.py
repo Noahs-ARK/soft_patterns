@@ -65,7 +65,7 @@ class BackPointer:
 
     def display(self, doc_text, extra=""):
         if self.previous is None:
-            print(" ".join(doc_text))
+            #print(" ".join(doc_text))
             return extra  # " ".join("{:<15}".format(s) for s in doc_text[self.start_token_idx:self.end_token_idx])
         if self.transition == "self-loop":
             extra = "SL {:<15}".format(doc_text[self.end_token_idx - 1]) + extra
