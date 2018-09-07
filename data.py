@@ -112,7 +112,9 @@ def check_dim_and_header(filename):
 def read_docs(filename, vocab, num_padding_tokens=1):
     with open(filename, encoding='ISO-8859-1') as input_file:
         docs = [line.rstrip().split() for line in input_file]
-    return [pad(vocab.numberize(doc), num_padding_tokens) for doc in docs], docs
+
+    return [pad(vocab.numberize(doc), num_padding_tokens=num_padding_tokens, START=START_TOKEN_IDX, END=END_TOKEN_IDX) for doc in docs],
+    [pad(doc, num_padding_tokens=num_padding_tokens, START=START_TOKEN, END=END_TOKEN) for doc in docs)]
 
 
 def read_labels(filename):
@@ -125,6 +127,6 @@ def vocab_from_text(filename):
         return Vocab.from_docs(line.rstrip().split() for line in input_file)
 
 
-def pad(doc, num_padding_tokens=1):
+def pad(doc, num_padding_tokens=1, START=START_TOKEN_IDX, END=END_TOKEN_IDX):
     """ prepend `START_TOKEN`s and append `END_TOKEN`s to a document """
-    return ([START_TOKEN_IDX] * num_padding_tokens) + doc + ([END_TOKEN_IDX] * num_padding_tokens)
+    return ([START] * num_padding_tokens) + doc + ([END] * num_padding_tokens)

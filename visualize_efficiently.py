@@ -63,17 +63,17 @@ class BackPointer:
                 self.end_token_idx
             )
 
-    def display(self, doc_text, extra="", num_padding_tokens=0):
+    def display(self, doc_text, extra=""):
         if self.previous is None:
             return extra  # " ".join("{:<15}".format(s) for s in doc_text[self.start_token_idx:self.end_token_idx])
         if self.transition == "self-loop":
-            extra = "SL {:<15}".format(doc_text[self.end_token_idx - 1 - num_padding_tokens]) + extra
-            return self.previous.display(doc_text, extra=extra, num_padding_tokens=num_padding_tokens)
+            extra = "SL {:<15}".format(doc_text[self.end_token_idx - 1]) + extra
+            return self.previous.display(doc_text, extra=extra)
         if self.transition == "happy path":
-            extra = "HP {:<15}".format(doc_text[self.end_token_idx - 1 - num_padding_tokens]) + extra
-            return self.previous.display(doc_text, extra=extra, num_padding_tokens=num_padding_tokens)
+            extra = "HP {:<15}".format(doc_text[self.end_token_idx - 1]) + extra
+            return self.previous.display(doc_text, extra=extra)
         extra = "ep {:<15}".format("") + extra
-        return self.previous.display(doc_text, extra=extra, num_padding_tokens=num_padding_tokens)
+        return self.previous.display(doc_text, extra=extra)
 
 
 def get_nearest_neighbors(w, embeddings, k=1000):
@@ -89,8 +89,7 @@ def get_candidate_documents(model,
                        batch_size,
                        dev_set=None,
                        k_best=5,
-		               max_doc_len=-1,
-                       num_padding_tokens=0):
+		               max_doc_len=-1):
     """Get list of candidate documents for each pattern, from which best match will be selected"""
     num_patterns = model.total_num_patterns
     selected_documents = [[] for i in range(num_patterns)]
@@ -121,10 +120,9 @@ def visualize_patterns(model,
                        dev_set=None,
                        dev_text=None,
                        k_best=5,
-		               max_doc_len=-1,
-                       num_padding_tokens=0):
+		               max_doc_len=-1):
     dev_sorted = decreasing_length(zip(dev_set, dev_text))
-    selected_documents = get_candidate_documents(model, batch_size, dev_sorted, k_best, max_doc_len, num_padding_tokens)
+    selected_documents = get_candidate_documents(model, batch_size, dev_sorted, k_best, max_doc_len)
 
     dev_labels = [
                     [
@@ -190,7 +188,7 @@ def visualize_patterns(model,
         def span_text(doc_idx):
             back_pointer = back_pointers[doc_idx][p]
             return back_pointer.score, back_pointer.display(dev_text[p][doc_idx],
-                            '#label={}'.format(dev_labels[p][doc_idx]), num_padding_tokens)
+                            '#label={}'.format(dev_labels[p][doc_idx]))
 
         print("Pattern:", p, "of length", p_len)
         print("Highest scoring spans:")
@@ -430,7 +428,7 @@ def main(args):
     if args.gpu:
         model.to_cuda(model)
 
-    visualize_patterns(model, args.batch_size, dev_data, dev_text, args.k_best, args.max_doc_len, num_padding_tokens)
+    visualize_patterns(model, args.batch_size, dev_data, dev_text, args.k_best, args.max_doc_len)
 
     return 0
 

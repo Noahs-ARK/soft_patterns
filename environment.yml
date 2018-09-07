@@ -7,8 +7,8 @@ dependencies:
   - mkl==2017.0.3
   - numpy==1.13.1
   - pyyaml==3.12
-  - magma-cuda80
   - ipython==6.2.0
   - pip:
     - tensorboardx==0.8
-    - http://download.pytorch.org/whl/cu80/torch-0.2.0.post3-cp36-cp36m-manylinux1_x86_64.whl
+    - http://download.pytorch.org/whl/torch-0.2.0.post3-cp36-cp36m-macosx_10_7_x86_64.whl
+    - torchvision
