@@ -45,6 +45,12 @@ python3.6 ./soft_patterns_test.py \
     --input_model <input model>
 ```
 
+### Sample data
+The ```data/``` folder contains sample files for training, development and testing. 
+The data comes from the SST dataset (with a 100 training samples).
+
+Each fold X (train, dev, test) contains two file: X.data (plain text sentences, one sentence per line) and X.labels (one label per line).
+
 
 ## Visualizing the Model
 Under construction.
