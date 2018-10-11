@@ -23,9 +23,9 @@ example usage:
 
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import sys; sys.path.append(".")
+from soft_patterns import train, training_arg_parser, general_arg_parser
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn.functional import relu
-from soft_patterns import train, training_arg_parser, general_arg_parser
 import numpy as np
 import os
 import torch

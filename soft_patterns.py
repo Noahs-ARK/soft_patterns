@@ -10,6 +10,7 @@ from collections import OrderedDict
 from time import monotonic
 import numpy as np
 import os
+from tensorboardX import SummaryWriter
 import torch
 from torch import FloatTensor, LongTensor, cat, mm, norm, randn, zeros, ones
 from torch.autograd import Variable
@@ -18,7 +19,6 @@ from torch.nn.functional import sigmoid, log_softmax
 from torch.nn.utils.rnn import pad_packed_sequence
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from tensorboardX import SummaryWriter
 from rnn import lstm_arg_parser, Rnn
 from data import read_embeddings, read_docs, read_labels, vocab_from_text, Vocab, UNK_IDX, START_TOKEN_IDX, \
     END_TOKEN_IDX

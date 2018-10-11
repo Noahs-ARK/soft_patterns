@@ -8,6 +8,8 @@ from collections import OrderedDict
 import sys
 from functools import total_ordering
 import numpy as np
+from soft_patterns import MaxPlusSemiring, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
+    LogSpaceMaxTimesSemiring, soft_pattern_arg_parser, general_arg_parser
 import torch
 from torch.autograd import Variable
 from torch.nn import LSTM
@@ -15,8 +17,6 @@ import heapq
 
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
 from rnn import Rnn
-from soft_patterns import MaxPlusSemiring, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
-    LogSpaceMaxTimesSemiring, soft_pattern_arg_parser, general_arg_parser
 from util import decreasing_length, chunked
 
 SCORE_IDX = 0
