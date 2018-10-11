@@ -7,7 +7,7 @@ Text classification code using SoPa, based on ["SoPa: Bridging CNNs, RNNs, and W
 The code is implemented in python3.6 using pytorch. To run, we recommend using conda. The following code creates a new conda environment and activates it:
 
 ```bash
-./intall.sh
+./install.sh
 source activate sopa
 ```
 
