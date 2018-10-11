@@ -4,6 +4,9 @@ Script to evaluate the accuracy of a model.
 """
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
+from soft_patterns import MaxPlusSemiring, LogSpaceMaxTimesSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring, \
+    soft_pattern_arg_parser, general_arg_parser
+
 from baselines.cnn import PooledCnnClassifier, max_pool_seq, cnn_arg_parser
 from baselines.dan import DanClassifier
 from baselines.lstm import AveragingRnnClassifier
@@ -12,8 +15,6 @@ import torch
 import numpy as np
 from torch.nn import LSTM
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
-from soft_patterns import MaxPlusSemiring, LogSpaceMaxTimesSemiring, evaluate_accuracy, SoftPatternClassifier, ProbSemiring, \
-    soft_pattern_arg_parser, general_arg_parser
 from rnn import Rnn
 
 SCORE_IDX = 0

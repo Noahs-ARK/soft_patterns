@@ -178,7 +178,7 @@ com="python -u soft_patterns.py        \
 	--seed $seed \
 	-w $w"
 
-echo ${com}
+${com}
 
 function gen_cluster_file {
     local s=$1

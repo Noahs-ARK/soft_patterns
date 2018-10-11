@@ -6,6 +6,8 @@ highest-scoring spans in the dev set.
 import argparse
 from collections import OrderedDict
 import sys
+from soft_patterns import MaxPlusSemiring, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
+    LogSpaceMaxTimesSemiring, soft_pattern_arg_parser, general_arg_parser
 import torch
 from torch.nn import LSTM
 
@@ -14,8 +16,6 @@ from visualize_efficiently import get_top_scoring_spans_for_doc
 from torch.nn.functional import softmax
 from torch.autograd import Variable
 from data import vocab_from_text, read_embeddings, read_docs, read_labels
-from soft_patterns import MaxPlusSemiring, Batch, argmax, SoftPatternClassifier, ProbSemiring, \
-    LogSpaceMaxTimesSemiring, soft_pattern_arg_parser, general_arg_parser
 from util import chunked
 import numpy as np
 
