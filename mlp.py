@@ -39,6 +39,6 @@ class MLP(Module):
 def mlp_arg_parser():
     """ CLI args related to the MLP module """
     p = ArgumentParser(add_help=False)
-    p.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=10)
+    p.add_argument("-d", "--mlp_hidden_dim", help="MLP hidden dimension", type=int, default=25)
     p.add_argument("-y", "--num_mlp_layers", help="Number of MLP layers", type=int, default=2)
     return p
