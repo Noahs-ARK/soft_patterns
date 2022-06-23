@@ -300,12 +300,36 @@ class SoftPatternClassifier(Module):
 
         self.end_states = self.to_cuda(fixed_var(LongTensor(end_states)))
 
-        # Instantiation
+        # Initialise
+        # Note that this diag data is always stored as a float, then transformed to a semiring value before 
+        # being operated on (then converted back to a float at the end)
         diag_data_size = self.total_num_patterns * self.num_diags * self.max_pattern_length
-        diag_data = randn(diag_data_size, self.word_dim)
-        bias_data = randn(diag_data_size, 1)
+        if self.semiring in [ProbSemiring, MaxTimesSemiring, InsideSemiring]:
+            # initialise on R+ by sapmling a bit to the right
+            diag_data = torch.clamp(2 + randn(diag_data_size, self.word_dim), min=0)
+            bias_data = torch.clamp(2 + randn(diag_data_size, 1), min=0)
 
-        normalize(diag_data)
+            normalize(diag_data)
+        
+        elif self.semiring == BooleanSemiring:
+            # initialise on {0, 1}
+            # torch.randint can't be found for some reason...
+            diag_data = torch.round(torch.rand(diag_data_size, self.word_dim))
+            bias_data = torch.round(torch.rand(diag_data_size, 1))
+
+        elif self.semiring == ViterbiSemiring:
+            # initialise on [0, 1] by sampling from N(0.5, 0.5)
+            diag_data = torch.clamp(0.5 + 0.5*randn(diag_data_size, self.word_dim), min=0, max=1)
+            bias_data = torch.clamp(0.5 + 0.5*randn(diag_data_size, 1), min=0, max=1)
+
+            normalize(diag_data)
+
+        else:
+            # Original initialisation, which assumes the semiring is defined R (or N, implicitly)
+            diag_data = randn(diag_data_size, self.word_dim)
+            bias_data = randn(diag_data_size, 1)
+
+            normalize(diag_data)
 
         if pre_computed_patterns is not None:
             diag_data, bias_data = self.load_pre_computed_patterns(pre_computed_patterns, diag_data, bias_data, pattern_specs)
