@@ -64,19 +64,22 @@ class Semiring:
 def neg_infinity(*sizes):
     return -100 * ones(*sizes)  # not really -inf, shh
 
+def pos_infinity(*sizes):
+    return 100 * ones(*sizes)  # not really +inf, shh
 
-# element-wise plus, times
+# Their implementation was incorrect, this one according to Applied Combinatorics on Words, Lothaire (2013)
+# Defined on R+
 ProbSemiring = \
     Semiring(
         zeros,
         ones,
         torch.add,
         torch.mul,
-        sigmoid,
+        lambda x : torch.clamp(x, min=0),
         identity
     )
 
-# element-wise max, plus
+# Defined on R with -inf
 MaxPlusSemiring = \
     Semiring(
         neg_infinity,
@@ -86,6 +89,7 @@ MaxPlusSemiring = \
         identity,
         identity
     )
+
 # element-wise max, times. in log-space
 LogSpaceMaxTimesSemiring = \
     Semiring(
@@ -95,6 +99,83 @@ LogSpaceMaxTimesSemiring = \
         torch.add,
         lambda x: torch.log(torch.sigmoid(x)),
         torch.exp
+    )
+
+# Defined on R+
+MaxTimesSemiring = \
+    Semiring(
+        zeros,
+        ones,
+        torch.max,
+        torch.mul,
+        lambda x : torch.clamp(x, min=0),
+        identity
+    )
+
+# Defined on {0, 1}
+BooleanSemiring = \
+    Semiring(
+        zeros,
+        ones,
+        lambda x, y : torch.clamp(torch.add(x, y), 0, 1),
+        torch.mul,
+        lambda x : torch.clamp(torch.round(x), 0, 1),
+        identity
+    )
+
+# Defined on [0, 1]
+ViterbiSemiring = \
+    Semiring(
+        zeros,
+        ones,
+        torch.max,
+        torch.mul,
+        lambda x : torch.clamp(x, min=0, max=1), 
+        identity
+    )
+
+# Defined on R+
+InsideSemiring = \
+    Semiring(
+        zeros,
+        ones, 
+        torch.add,
+        torch.mul,
+        lambda x : torch.clamp(x, min=0),
+        identity
+    )
+
+# Defined on R with +inf
+RealSemiring = \
+    Semiring(
+        pos_infinity,
+        torch.zeros,
+        torch.min,
+        torch.add,
+        identity,
+        identity
+    )
+
+# Defined on R with +inf
+MinPlusSemiring = \
+    Semiring(
+        pos_infinity,
+        zeros,
+        torch.min,
+        torch.add,
+        identity,
+        identity
+    )
+
+# Defined on N
+CountingSemiring = \
+    Semiring(
+        torch.zeros,
+        torch.ones,
+        torch.add,
+        torch.mul,
+        torch.round,
+        identity
     )
 
 SHARED_SL_PARAM_PER_STATE_PER_PATTERN = 1
@@ -219,11 +300,36 @@ class SoftPatternClassifier(Module):
 
         self.end_states = self.to_cuda(fixed_var(LongTensor(end_states)))
 
+        # Initialise
+        # Note that this diag data is always stored as a float, then transformed to a semiring value before 
+        # being operated on (then converted back to a float at the end)
         diag_data_size = self.total_num_patterns * self.num_diags * self.max_pattern_length
-        diag_data = randn(diag_data_size, self.word_dim)
-        bias_data = randn(diag_data_size, 1)
+        if self.semiring in [ProbSemiring, MaxTimesSemiring, InsideSemiring]:
+            # initialise on R+ by sapmling a bit to the right
+            diag_data = torch.clamp(2 + randn(diag_data_size, self.word_dim), min=0)
+            bias_data = torch.clamp(2 + randn(diag_data_size, 1), min=0)
 
-        normalize(diag_data)
+            normalize(diag_data)
+        
+        elif self.semiring == BooleanSemiring:
+            # initialise on {0, 1}
+            # torch.randint can't be found for some reason...
+            diag_data = torch.round(torch.rand(diag_data_size, self.word_dim))
+            bias_data = torch.round(torch.rand(diag_data_size, 1))
+
+        elif self.semiring == ViterbiSemiring:
+            # initialise on [0, 1] by sampling from N(0.5, 0.5)
+            diag_data = torch.clamp(0.5 + 0.5*randn(diag_data_size, self.word_dim), min=0, max=1)
+            bias_data = torch.clamp(0.5 + 0.5*randn(diag_data_size, 1), min=0, max=1)
+
+            normalize(diag_data)
+
+        else:
+            # Original initialisation, which assumes the semiring is defined R (or N, implicitly)
+            diag_data = randn(diag_data_size, self.word_dim)
+            bias_data = randn(diag_data_size, 1)
+
+            normalize(diag_data)
 
         if pre_computed_patterns is not None:
             diag_data, bias_data = self.load_pre_computed_patterns(pre_computed_patterns, diag_data, bias_data, pattern_specs)
@@ -630,8 +736,10 @@ def train(train_data,
             )
         )
 
-        if dev_loss < best_dev_loss:
-            if dev_acc > best_dev_acc:
+        # Add rounding here because we don't actually care about such tiny improvements in accuracy, 
+        # we'd rather stop earlier
+        if round(dev_loss, 5) < round(best_dev_loss, 5):
+            if round(dev_acc, 5) > round(best_dev_acc, 5):
                 best_dev_acc = dev_acc
                 print("New best acc!")
             print("New best dev!")
@@ -641,19 +749,20 @@ def train(train_data,
                 model_save_file = os.path.join(model_save_dir, "{}_{}.pth".format(model_file_prefix, it))
                 print("saving model to", model_save_file)
                 torch.save(model.state_dict(), model_save_file)
+
         else:
             best_dev_loss_index += 1
             if best_dev_loss_index == patience:
                 print("Reached", patience, "iterations without improving dev loss. Breaking")
                 break
 
-        if dev_acc > best_dev_acc:
+        if round(dev_acc, 5) > round(best_dev_acc, 5):
             best_dev_acc = dev_acc
             print("New best acc!")
             if model_save_dir is not None:
                 model_save_file = os.path.join(model_save_dir, "{}_{}.pth".format(model_file_prefix, it))
                 print("saving model to", model_save_file)
-                torch.save(model.state_dict(), model_save_file)
+                torch.save(model.state_dict(), model_save_file)      
 
         if run_scheduler:
             scheduler.step(dev_loss)
@@ -724,10 +833,18 @@ def main(args):
     else:
         rnn = None
 
-    semiring = \
-        MaxPlusSemiring if args.maxplus else (
-            LogSpaceMaxTimesSemiring if args.maxtimes else ProbSemiring
-        )
+    semiring = {
+        'ProbSemiring': ProbSemiring,
+        'MaxPlusSemiring': MaxPlusSemiring,
+        'LogSpaceMaxTimesSemiring': LogSpaceMaxTimesSemiring,
+        'MaxTimesSemiring': MaxTimesSemiring,
+        'BooleanSemiring': BooleanSemiring,
+        'ViterbiSemiring': ViterbiSemiring,
+        'InsideSemiring': InsideSemiring,
+        'RealSemiring': RealSemiring,
+        'MinPlusSemiring': MinPlusSemiring,
+        'CountingSemiring': CountingSemiring
+    }[args.semiring]
 
     model = SoftPatternClassifier(pattern_specs,
                                   mlp_hidden_dim,
@@ -808,12 +925,9 @@ def soft_pattern_arg_parser():
     p.add_argument("-p", "--patterns",
                    help="Pattern lengths and numbers: an underscore separated list of length-number pairs",
                    default="5-50_4-50_3-50_2-50")
-    p.add_argument("--maxplus",
-                   help="Use max-plus semiring instead of plus-times",
-                   default=False, action='store_true')
-    p.add_argument("--maxtimes",
-                   help="Use max-times semiring instead of plus-times",
-                   default=False, action='store_true')
+    p.add_argument("--semiring",
+                   help="Semiring to use",
+                   default='ProbSemiring', type=str)
     p.add_argument("--bias_scale_param",
                    help="Scale bias term by this parameter",
                    default=0.1, type=float)
