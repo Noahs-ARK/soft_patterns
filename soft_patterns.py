@@ -146,17 +146,6 @@ InsideSemiring = \
     )
 
 # Defined on R with +inf
-RealSemiring = \
-    Semiring(
-        pos_infinity,
-        torch.zeros,
-        torch.min,
-        torch.add,
-        identity,
-        identity
-    )
-
-# Defined on R with +inf
 MinPlusSemiring = \
     Semiring(
         pos_infinity,
@@ -841,7 +830,6 @@ def main(args):
         'BooleanSemiring': BooleanSemiring,
         'ViterbiSemiring': ViterbiSemiring,
         'InsideSemiring': InsideSemiring,
-        'RealSemiring': RealSemiring,
         'MinPlusSemiring': MinPlusSemiring,
         'CountingSemiring': CountingSemiring
     }[args.semiring]
