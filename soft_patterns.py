@@ -145,17 +145,6 @@ MinPlusSemiring = \
         identity
     )
 
-# Defined on N
-CountingSemiring = \
-    Semiring(
-        torch.zeros,
-        torch.ones,
-        torch.add,
-        torch.mul,
-        torch.round,
-        identity
-    )
-
 SHARED_SL_PARAM_PER_STATE_PER_PATTERN = 1
 SHARED_SL_SINGLE_PARAM = 2
 
@@ -818,8 +807,7 @@ def main(args):
         'MaxTimesSemiring': MaxTimesSemiring,
         'BooleanSemiring': BooleanSemiring,
         'ViterbiSemiring': ViterbiSemiring,
-        'MinPlusSemiring': MinPlusSemiring,
-        'CountingSemiring': CountingSemiring
+        'MinPlusSemiring': MinPlusSemiring
     }[args.semiring]
 
     model = SoftPatternClassifier(pattern_specs,
