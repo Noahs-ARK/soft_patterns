@@ -4,7 +4,7 @@ Script to evaluate the accuracy of a model.
 """
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from collections import OrderedDict
-from soft_patterns import ProbSemiring, MaxPlusSemiring, LogSpaceMaxTimesSemiring, MaxTimesSemiring, BooleanSemiring, ViterbiSemiring, InsideSemiring, MinPlusSemiring, CountingSemiring, \
+from soft_patterns import ProbSemiring, MaxPlusSemiring, LogSpaceMaxTimesSemiring, MaxTimesSemiring, BooleanSemiring, ViterbiSemiring, MinPlusSemiring, CountingSemiring, \
     evaluate_accuracy, SoftPatternClassifier, soft_pattern_arg_parser, general_arg_parser
 from baselines.cnn import PooledCnnClassifier, max_pool_seq, cnn_arg_parser
 from baselines.dan import DanClassifier
@@ -91,7 +91,6 @@ def main(args):
             'MaxTimesSemiring': MaxTimesSemiring,
             'BooleanSemiring': BooleanSemiring,
             'ViterbiSemiring': ViterbiSemiring,
-            'InsideSemiring': InsideSemiring,
             'MinPlusSemiring': MinPlusSemiring,
             'CountingSemiring': CountingSemiring
         }[args.semiring]
