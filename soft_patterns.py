@@ -134,28 +134,6 @@ ViterbiSemiring = \
         identity
     )
 
-# Defined on R+
-InsideSemiring = \
-    Semiring(
-        zeros,
-        ones, 
-        torch.add,
-        torch.mul,
-        lambda x : torch.clamp(x, min=0),
-        identity
-    )
-
-# Defined on R with +inf
-RealSemiring = \
-    Semiring(
-        pos_infinity,
-        torch.zeros,
-        torch.min,
-        torch.add,
-        identity,
-        identity
-    )
-
 # Defined on R with +inf
 MinPlusSemiring = \
     Semiring(
@@ -164,17 +142,6 @@ MinPlusSemiring = \
         torch.min,
         torch.add,
         identity,
-        identity
-    )
-
-# Defined on N
-CountingSemiring = \
-    Semiring(
-        torch.zeros,
-        torch.ones,
-        torch.add,
-        torch.mul,
-        torch.round,
         identity
     )
 
@@ -304,7 +271,7 @@ class SoftPatternClassifier(Module):
         # Note that this diag data is always stored as a float, then transformed to a semiring value before 
         # being operated on (then converted back to a float at the end)
         diag_data_size = self.total_num_patterns * self.num_diags * self.max_pattern_length
-        if self.semiring in [ProbSemiring, MaxTimesSemiring, InsideSemiring]:
+        if self.semiring in [ProbSemiring, MaxTimesSemiring]:
             # initialise on R+ by sapmling a bit to the right
             diag_data = torch.clamp(2 + randn(diag_data_size, self.word_dim), min=0)
             bias_data = torch.clamp(2 + randn(diag_data_size, 1), min=0)
@@ -840,10 +807,7 @@ def main(args):
         'MaxTimesSemiring': MaxTimesSemiring,
         'BooleanSemiring': BooleanSemiring,
         'ViterbiSemiring': ViterbiSemiring,
-        'InsideSemiring': InsideSemiring,
-        'RealSemiring': RealSemiring,
-        'MinPlusSemiring': MinPlusSemiring,
-        'CountingSemiring': CountingSemiring
+        'MinPlusSemiring': MinPlusSemiring
     }[args.semiring]
 
     model = SoftPatternClassifier(pattern_specs,
