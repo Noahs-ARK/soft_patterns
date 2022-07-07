@@ -12,4 +12,5 @@ python3.6 ./soft_patterns_test.py \
     --vd "$TEST_DATA" \
     --vl "$TEST_LABELS" \
     -p "$PATTERN" \
-    --input_model "$INPUT_MODEL"
+    --input_model "$INPUT_MODEL"\
+    -- no_sl

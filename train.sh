@@ -10,5 +10,6 @@ LEARNING_RATE=0.001
 MLP_DIM=100
 DROPOUT=0
 SEMIRING='LogSpaceMaxTimesSemiring'
-
-python3.6 ./soft_patterns.py -i "250" -l "$LEARNING_RATE" -d $MLP_DIM -t "$DROPOUT" --semiring "$SEMIRING" -e "$EMB_FILE" --td "$TR_DATA" --tl "$TR_LABELS" --vd "$DEV_DATA" --vl "$DEV_LABELS" -p "$PATTERN" --model_save_dir "$MODEL_SAVE_DIR" --patience "50"
+ITERATE=250
+python3.6 ./soft_patterns.py -i "$ITERATE" -l "$LEARNING_RATE" -d $MLP_DIM -t "$DROPOUT" --semiring "$SEMIRING" -e "$EMB_FILE" --td "$TR_DATA" --tl "$TR_LABELS" --vd "$DEV_DATA" --vl "$DEV_LABELS" -p "$PATTERN" --model_save_dir "$MODEL_SAVE_DIR" --patience "50"\
+    --no_sl
